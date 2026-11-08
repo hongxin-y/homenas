@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import os
+import ipaddress
+import re
 import shutil
 import subprocess
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -41,6 +43,108 @@ def fixed_command(argv: Sequence[str], timeout: float = 3.0) -> Dict[str, Any]:
     }
 
 
+def _controller_json(controller: str, path: str, secret: str = "", timeout: float = 3.0) -> Dict[str, Any]:
+    """Read one fixed Mihomo Controller endpoint without exposing credentials."""
+    request = Request(controller.rstrip("/") + path, method="GET")
+    if secret:
+        request.add_header("Authorization", "Bearer " + secret)
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        return body if isinstance(body, dict) else {}
+    except (OSError, URLError, ValueError, UnicodeDecodeError):
+        return {}
+
+
+def _mihomo_rules(body: Dict[str, Any]) -> Dict[str, Any]:
+    rows: List[Dict[str, Any]] = []
+    for raw in body.get("rules") or []:
+        if not isinstance(raw, dict):
+            continue
+        extra = raw.get("extra") if isinstance(raw.get("extra"), dict) else {}
+        rows.append({
+            "index": raw.get("index"),
+            "type": raw.get("type"),
+            "payload": raw.get("payload"),
+            "proxy": raw.get("proxy"),
+            "size": raw.get("size"),
+            "disabled": bool(extra.get("disabled", False)),
+            "hit_count": extra.get("hitCount", 0),
+            "hit_at": extra.get("hitAt"),
+            "miss_count": extra.get("missCount", 0),
+            "miss_at": extra.get("missAt"),
+        })
+    return {"available": bool(rows or "rules" in body), "count": len(rows), "rules": rows, "source": "mihomo /rules"}
+
+
+def _mihomo_proxies(body: Dict[str, Any]) -> Dict[str, Any]:
+    proxies = body.get("proxies") if isinstance(body.get("proxies"), dict) else {}
+    groups: List[Dict[str, Any]] = []
+    nodes: List[Dict[str, Any]] = []
+    group_types = {"Selector", "URLTest", "Fallback", "LoadBalance", "Relay", "Smart"}
+    for name, raw in proxies.items():
+        if not isinstance(raw, dict):
+            continue
+        kind = raw.get("type") or "Unknown"
+        all_nodes = raw.get("all") if isinstance(raw.get("all"), list) else []
+        if kind in group_types:
+            groups.append({
+                "name": name,
+                "type": kind,
+                "now": raw.get("now"),
+                "node_count": len(all_nodes),
+                "nodes": all_nodes[:40],
+            })
+        else:
+            history = raw.get("history") if isinstance(raw.get("history"), list) else []
+            delay = history[-1].get("delay") if history and isinstance(history[-1], dict) else None
+            nodes.append({
+                "name": name,
+                "type": kind,
+                "alive": raw.get("alive"),
+                "udp": raw.get("udp"),
+                "delay_ms": delay,
+            })
+    groups.sort(key=lambda item: str(item["name"]))
+    nodes.sort(key=lambda item: str(item["name"]))
+    return {
+        "available": bool(body),
+        "count": len(nodes),
+        "group_count": len(groups),
+        "groups": groups,
+        "nodes": nodes,
+        "source": "mihomo /proxies",
+    }
+
+
+def _valid_ping_target(target: str) -> bool:
+    if not target or len(target) > 253 or any(ch.isspace() for ch in target):
+        return False
+    try:
+        ipaddress.ip_address(target)
+        return True
+    except ValueError:
+        pass
+    return bool(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", target)) and ".." not in target
+
+
+def ping_target(target: str) -> Dict[str, Any]:
+    """Run one bounded, shell-free ICMP probe requested by an authenticated user."""
+    target = str(target or "").strip()
+    if not _valid_ping_target(target):
+        return {"ok": False, "target": target[:253], "status": "invalid-target", "detail": "请输入合法的 IP 地址或主机名"}
+    ping = shutil.which("ping")
+    if not ping:
+        return {"ok": False, "target": target, "status": "unavailable", "detail": "系统未安装 ping"}
+    argv = [ping, "-n", "1", "-w", "2000", target] if os.name == "nt" else [ping, "-c", "1", "-W", "2", target]
+    result = fixed_command(argv, timeout=4.0)
+    output = (result.get("stdout") or "") + "\n" + (result.get("stderr") or "")
+    match = re.search(r"(?:time|时间)[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*ms", output, re.IGNORECASE)
+    if result.get("ok"):
+        return {"ok": True, "target": target, "status": "reachable", "latency_ms": float(match.group(1)) if match else None, "detail": "Ping 成功"}
+    return {"ok": False, "target": target, "status": "unreachable", "latency_ms": float(match.group(1)) if match else None, "detail": "目标无响应或 ICMP 被拦截"}
+
+
 def parse_tailscale_status(payload: str) -> Dict[str, Any]:
     """Reduce tailscale JSON to browser-safe health facts; omit peer names/IPs."""
     try:
@@ -62,6 +166,26 @@ def parse_tailscale_status(payload: str) -> Dict[str, Any]:
     }
 
 
+def _tailscale_peer_summary(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    peers = data.get("Peer") or {}
+    rows: List[Dict[str, Any]] = []
+    if not isinstance(peers, dict):
+        return rows
+    for peer in peers.values():
+        if not isinstance(peer, dict):
+            continue
+        dns_name = str(peer.get("DNSName") or peer.get("HostName") or "").rstrip(".")
+        rows.append({
+            "name": str(peer.get("HostName") or dns_name or "Unnamed peer"),
+            "dns_name": dns_name or None,
+            "online": peer.get("Online") if isinstance(peer.get("Online"), bool) else None,
+            "last_seen": peer.get("LastSeen"),
+            "relay": peer.get("CurAddr") or peer.get("Relay") or None,
+            "exit_node": bool(peer.get("ExitNode")),
+        })
+    return sorted(rows, key=lambda row: (not bool(row.get("online")), str(row.get("name"))))
+
+
 def collect_tailscale() -> Dict[str, Any]:
     path = shutil.which("tailscale")
     result: Dict[str, Any] = {
@@ -80,6 +204,11 @@ def collect_tailscale() -> Dict[str, Any]:
         result["reason"] = "tailscale status 不可用"
         return result
     result.update(parse_tailscale_status(probe["stdout"]))
+    try:
+        payload = json.loads(probe["stdout"])
+        result["peers"] = _tailscale_peer_summary(payload)
+    except (TypeError, ValueError):
+        result["peers"] = []
     return result
 
 
@@ -92,23 +221,32 @@ def collect_mihomo() -> Dict[str, Any]:
         "path": path,
         "controller_available": None,
         "mode": None,
+        "version": None,
+        "config": {},
+        "rules": {"available": False, "count": 0, "rules": [], "reason": "Controller 未连接"},
+        "proxies": {"available": False, "count": 0, "group_count": 0, "groups": [], "nodes": [], "reason": "Controller 未连接"},
         "detail": "Secret 仅在服务器环境变量中使用；浏览器不会收到 Secret。",
     }
     if not controller or not EXTERNAL_PROBES:
         result["reason"] = "Controller 外部探测未启用或未配置"
         return result
-    # Only a fixed read-only version endpoint is called. No browser-provided URL.
-    request = Request(controller + "/version", method="GET")
-    if secret:
-        request.add_header("Authorization", "Bearer " + secret)
-    try:
-        with urlopen(request, timeout=3) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        result["controller_available"] = True
-        result["version"] = body.get("version") if isinstance(body, dict) else None
-    except (OSError, URLError, ValueError):
+    # Only fixed read-only endpoints are called. No browser-provided URL or path.
+    version = _controller_json(controller, "/version", secret)
+    if not version:
         result["controller_available"] = False
         result["reason"] = "Controller version endpoint unavailable"
+        return result
+    result["controller_available"] = True
+    result["version"] = version.get("version")
+    configs = _controller_json(controller, "/configs", secret)
+    result["mode"] = configs.get("mode")
+    result["config"] = {
+        key: configs.get(key)
+        for key in ("port", "socks-port", "redir-port", "tproxy-port", "mixed-port", "allow-lan", "bind-address", "tun")
+        if key in configs
+    }
+    result["rules"] = _mihomo_rules(_controller_json(controller, "/rules", secret))
+    result["proxies"] = _mihomo_proxies(_controller_json(controller, "/proxies", secret))
     return result
 
 

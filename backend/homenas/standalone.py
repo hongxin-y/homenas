@@ -20,6 +20,7 @@ from .auth import AuthManager
 from .collector import Collector
 from .config import ADMIN_PASSWORD, DB_PATH, FRONTEND_DIR, HOST, PORT, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
+from .integrations import ping_target
 
 
 class Runtime:
@@ -126,6 +127,14 @@ class Handler(BaseHTTPRequestHandler):
             self.app_runtime.auth.revoke(token)
             self.write_json({"ok": True}, headers={"Set-Cookie": "homenas_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"})
             return
+        if path == "/api/vpn/ping":
+            if not self.require_user():
+                return
+            body = self.json_body()
+            result = ping_target(str(body.get("target", "")))
+            self.app_runtime.db.audit(self.token_user() or "admin", "vpn.ping", {"target": result.get("target"), "status": result.get("status")})
+            self.write_json(result)
+            return
         self.write_json({"detail": "Not found"}, 404)
 
     def do_GET(self) -> None:
@@ -164,7 +173,7 @@ class Handler(BaseHTTPRequestHandler):
             self.write_json({
                 **latest,
                 "history": [
-                    {"timestamp": x.get("timestamp"), "cpu_percent": x.get("system", {}).get("cpu_percent"), "memory_percent": x.get("system", {}).get("memory", {}).get("percent"), "rx": x.get("network", {}).get("physical_rx_bytes_per_second"), "tx": x.get("network", {}).get("physical_tx_bytes_per_second")}
+                    {"timestamp": x.get("timestamp"), "cpu_percent": x.get("system", {}).get("cpu_percent"), "memory_percent": x.get("system", {}).get("memory", {}).get("percent"), "rx": x.get("network", {}).get("physical_rx_bytes_per_second"), "tx": x.get("network", {}).get("physical_tx_bytes_per_second"), "power_watts": x.get("power", {}).get("package_watts")}
                     for x in history
                 ],
             })

@@ -28,6 +28,9 @@ def metric_samples(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
         samples.append({"metric": "network.rx", "value": network["physical_rx_bytes_per_second"], "unit": "bytes/s", "source": "psutil", "ts": snapshot["timestamp"]})
     if network.get("physical_tx_bytes_per_second") is not None:
         samples.append({"metric": "network.tx", "value": network["physical_tx_bytes_per_second"], "unit": "bytes/s", "source": "psutil", "ts": snapshot["timestamp"]})
+    power = snapshot.get("power") or {}
+    if power.get("package_watts") is not None:
+        samples.append({"metric": "power.package", "value": power["package_watts"], "unit": "W", "source": power.get("source"), "ts": snapshot["timestamp"]})
     return samples
 
 

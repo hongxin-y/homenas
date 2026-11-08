@@ -10,3 +10,39 @@ h1 { margin:10px 0 6px; font-size:40px; letter-spacing:-.04em; } h2 { margin:0; 
 .status-list { display:grid; gap:8px; } .status-row, .data-row { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:11px 0; border-bottom:1px solid #223044; } .status-row:last-child, .data-row:last-child { border-bottom:0; } .status-name { display:flex; align-items:center; gap:9px; font-size:13px; } .status-pill { display:inline-flex; align-items:center; gap:5px; padding:4px 7px; border-radius:999px; color:var(--muted); background:#263446; font-size:11px; } .status-pill.ok { color:var(--accent); background:#17453e; } .status-pill.warn { color:var(--warn); background:#493a1c; } .status-pill.bad { color:var(--danger); background:#4c242b; } .table-wrap { overflow:auto; } table { width:100%; border-collapse:collapse; font-size:12px; } th, td { padding:12px 10px; text-align:left; border-bottom:1px solid #223044; white-space:nowrap; } th { color:var(--muted); font-weight:600; } .empty { padding:26px 0; color:var(--muted); text-align:center; font-size:13px; } .notice { padding:12px 14px; color:var(--muted); background:#172130; border-left:2px solid var(--blue); border-radius:8px; font-size:12px; line-height:1.6; }
 @media (max-width:1100px) { .metrics-grid { grid-template-columns:repeat(3,1fr); } } @media (max-width:760px) { .dashboard { display:block; } .sidebar { position:sticky; top:0; z-index:2; padding:12px 14px; border-right:0; border-bottom:1px solid var(--line); } .brand { padding:0 4px 12px; } nav { grid-template-columns:repeat(4,1fr); } .nav-item { padding:8px 7px; font-size:11px; } .nav-item span, .sidebar-footer { display:none; } .content { padding:24px 14px 40px; } .topbar { align-items:flex-start; } .top-actions { flex-direction:column; align-items:flex-end; gap:6px; } .metrics-grid { grid-template-columns:repeat(2,1fr); } .two-col { grid-template-columns:1fr; } }
 
+/* Data-heavy panels keep their units visible at a glance. */
+.chart-shell { position:relative; min-height:220px; }
+.chart-unit { color:var(--muted); font-size:11px; text-align:right; margin:-2px 0 2px; }
+.chart-svg { display:block; width:100%; height:190px; overflow:visible; }
+.chart-grid { stroke:#2a3a50; stroke-width:1; stroke-dasharray:3 5; }
+.chart-y-label, .chart-x-label { fill:var(--muted); font-size:10px; }
+.chart-line { fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+.chart-line.accent { stroke:var(--accent); }
+.chart-line.secondary { stroke:var(--blue); }
+.chart-line.warn { stroke:var(--warn); }
+.legend i.accent { background:var(--accent); }
+.legend i.secondary { background:var(--blue); }
+.legend i.warn { background:var(--warn); }
+.data-grid, .kv-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.kv-grid { grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:14px; }
+.mini-stat { display:grid; gap:5px; padding:11px 12px; background:#111c2a; border:1px solid #26364b; border-radius:10px; }
+.mini-stat span { color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mini-stat strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.usage-cell { display:grid; gap:6px; min-width:110px; }
+.usage-track { display:block; height:5px; overflow:hidden; border-radius:99px; background:#243449; }
+.usage-track i { display:block; height:100%; border-radius:inherit; background:var(--accent); }
+.inline-form { display:flex; gap:10px; align-items:center; }
+.inline-form input { flex:1; min-width:0; }
+.button-small { padding:9px 13px; white-space:nowrap; }
+button:disabled { cursor:wait; opacity:.55; }
+.quick-targets { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.ping-result { margin-top:14px; padding:11px 13px; border-radius:9px; background:#111c2a; font-size:12px; }
+.ping-result.success { color:var(--accent); border:1px solid #2d6e65; }
+.ping-result.failure { color:var(--danger); border:1px solid #713844; }
+.table-search { width:100%; margin-bottom:12px; }
+.rule-payload { max-width:380px; overflow:hidden; text-overflow:ellipsis; }
+.compact-table { margin-top:16px; max-height:360px; }
+.compact-table table { font-size:11px; }
+.peer-list { max-height:250px; overflow:auto; margin-top:10px; }
+@media (max-width:760px) { .data-grid, .kv-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .chart-unit { text-align:left; } .inline-form { align-items:stretch; } }
+

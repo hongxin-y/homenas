@@ -224,6 +224,7 @@ def collect_storage() -> Dict[str, Any]:
 class CollectorState:
     def __init__(self) -> None:
         self.previous_network: Dict[str, Tuple[float, float, float, float]] = {}
+        self.previous_power: Dict[str, Tuple[float, float]] = {}
         self.history: Deque[Dict[str, Any]] = deque(maxlen=60)
 
 
@@ -289,11 +290,11 @@ def collect_network(state: CollectorState) -> Dict[str, Any]:
     }
 
 
-def collect_power() -> Dict[str, Any]:
-    # The local collector deliberately does not invoke perf. On a Debian NAS,
-    # a dedicated collector service will be configured after perf permissions
-    # and machine-readable output are audited. Sysfs is only a diagnostic hint.
+def collect_power(state: Optional[CollectorState] = None) -> Dict[str, Any]:
+    # Reading energy_uj is safe and does not require invoking perf or changing
+    # kernel permissions. Watts become available after two samples.
     domains: Dict[str, Dict[str, Any]] = {}
+    now = time.monotonic()
     powercap = Path("/sys/class/powercap")
     if powercap.exists():
         for energy_file in powercap.glob("**/energy_uj"):
@@ -302,13 +303,26 @@ def collect_power() -> Dict[str, Any]:
             except (OSError, ValueError):
                 continue
             domain = energy_file.parent.name.lower().replace("intel-rapl:", "package-")
-            domains[domain] = {"available": True, "energy_uj": value, "source": "sysfs-diagnostic", "quality": "diagnostic"}
+            watts = None
+            if state is not None:
+                watts = counter_rate(state.previous_power.get(domain), float(value), now)
+                state.previous_power[domain] = (float(value), now)
+            domains[domain] = {
+                "available": watts is not None,
+                "energy_uj": value,
+                "watts": round(watts / 1_000_000, 3) if watts is not None else None,
+                "unit": "W",
+                "source": "sysfs-energy_uj",
+                "quality": "ok" if watts is not None else "warming-up",
+            }
+    available_domains = [item for item in domains.values() if item.get("available")]
     return {
-        "available": False,
-        "source": "perf",
-        "reason": "本地模式未启动长生命周期 perf collector；目标 NAS 需先审计 perf 权限和事件。",
+        "available": bool(available_domains),
+        "source": "sysfs-energy_uj" if domains else "powercap",
+        "reason": None if available_domains else ("等待第二次能量采样" if domains else "系统未提供 /sys/class/powercap 能量计"),
         "domains": domains,
-        "semantics": "Package/Cores/GPU/DRAM 不可直接相加；PSys 未经独立功率计验证不能当作插座功耗。",
+        "package_watts": round(sum(item.get("watts") or 0 for item in available_domains), 3) if available_domains else None,
+        "semantics": "Package/Cores/GPU/DRAM 不可直接相加；这里是 CPU/SoC 能量计，不等于插座输入功耗。",
     }
 
 
@@ -383,7 +397,7 @@ def collect_snapshot(state: CollectorState) -> Dict[str, Any]:
     snapshot = {
         "timestamp": utc_now(),
         "system": collect_system(),
-        "power": collect_power(),
+        "power": collect_power(state),
         "storage": collect_storage(),
         "network": collect_network(state),
         "vpn": vpn,

@@ -14,11 +14,16 @@ from .auth import AuthManager
 from .collector import Collector
 from .config import ADMIN_PASSWORD, DB_PATH, FRONTEND_DIR, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
+from .integrations import ping_target
 
 
 class LoginRequest(BaseModel):
     username: str = Field(default="admin", min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=256)
+
+
+class PingRequest(BaseModel):
+    target: str = Field(min_length=1, max_length=253)
 
 
 def _bearer(authorization: Optional[str]) -> Optional[str]:
@@ -124,7 +129,7 @@ async def overview(request: Request, user: str = Depends(current_user)) -> Dict[
         "vpn": snapshot["vpn"],
         "alerts": snapshot["alerts"],
         "history": [
-            {"timestamp": item.get("timestamp"), "cpu_percent": item.get("system", {}).get("cpu_percent"), "memory_percent": item.get("system", {}).get("memory", {}).get("percent"), "rx": item.get("network", {}).get("physical_rx_bytes_per_second"), "tx": item.get("network", {}).get("physical_tx_bytes_per_second")}
+            {"timestamp": item.get("timestamp"), "cpu_percent": item.get("system", {}).get("cpu_percent"), "memory_percent": item.get("system", {}).get("memory", {}).get("percent"), "rx": item.get("network", {}).get("physical_rx_bytes_per_second"), "tx": item.get("network", {}).get("physical_tx_bytes_per_second"), "power_watts": item.get("power", {}).get("package_watts")}
             for item in history
         ],
     }
@@ -153,6 +158,13 @@ async def network(request: Request, user: str = Depends(current_user)) -> Dict[s
 @app.get("/api/vpn")
 async def vpn(request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
     return _snapshot(request)["vpn"]
+
+
+@app.post("/api/vpn/ping")
+async def vpn_ping(payload: PingRequest, request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
+    result = await asyncio.to_thread(ping_target, payload.target)
+    request.app.state.db.audit(user, "vpn.ping", {"target": result.get("target"), "status": result.get("status")})
+    return result
 
 
 @app.get("/api/seafile")
@@ -268,8 +280,8 @@ async def v1_mihomo_status(request: Request, user: str = Depends(current_user)) 
 
 
 @app.get("/api/v1/vpn/mihomo/proxies")
-async def v1_mihomo_proxies(user: str = Depends(current_user)) -> Dict[str, Any]:
-    return {"proxies": [], "quality": "unavailable", "reason": "只读 Controller 集成尚未配置"}
+async def v1_mihomo_proxies(request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
+    return _snapshot(request)["vpn"]["mihomo"].get("proxies", {})
 
 
 @app.get("/api/v1/vpn/mihomo/traffic")
@@ -290,7 +302,7 @@ async def v1_tailscale_status(request: Request, user: str = Depends(current_user
 @app.get("/api/v1/vpn/tailscale/peers")
 async def v1_tailscale_peers(request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
     tailscale_data = _snapshot(request)["vpn"]["tailscale"]
-    return {"peer_count": tailscale_data.get("peer_count"), "online_peer_count": tailscale_data.get("online_peer_count"), "peers": []}
+    return {"peer_count": tailscale_data.get("peer_count"), "online_peer_count": tailscale_data.get("online_peer_count"), "peers": tailscale_data.get("peers", [])}
 
 
 @app.get("/api/v1/services")
