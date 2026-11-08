@@ -405,6 +405,20 @@ def collect_snapshot(state: CollectorState) -> Dict[str, Any]:
         "services": services,
     }
     snapshot["alerts"] = collect_alerts(snapshot)
-    state.history.append(snapshot)
+    # Keep only chart fields in the rolling history. The full snapshot contains
+    # Mihomo nodes/rules and would otherwise multiply its memory footprint every
+    # five seconds without providing any historical value to the dashboard.
+    state.history.append({
+        "timestamp": snapshot["timestamp"],
+        "system": {
+            "cpu_percent": snapshot["system"].get("cpu_percent"),
+            "memory": {"percent": snapshot["system"].get("memory", {}).get("percent")},
+        },
+        "power": {"package_watts": snapshot["power"].get("package_watts")},
+        "network": {
+            "physical_rx_bytes_per_second": snapshot["network"].get("physical_rx_bytes_per_second"),
+            "physical_tx_bytes_per_second": snapshot["network"].get("physical_tx_bytes_per_second"),
+        },
+    })
     return snapshot
 
