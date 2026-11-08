@@ -1,0 +1,27 @@
+# Example only. Review paths, users and hardening before installation.
+[Unit]
+Description=HomeNAS API
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=homenas
+Group=homenas
+WorkingDirectory=/opt/homenas/backend
+EnvironmentFile=-/etc/homenas/homenas.env
+ExecStart=/opt/homenas/venv/bin/uvicorn homenas.main:app --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/homenas /var/log/homenas
+
+[Install]
+WantedBy=multi-user.target

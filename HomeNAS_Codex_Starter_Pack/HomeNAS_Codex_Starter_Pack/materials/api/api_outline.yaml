@@ -1,0 +1,50 @@
+openapi_outline:
+  version: v1
+  auth:
+    - POST /api/v1/auth/login
+    - POST /api/v1/auth/logout
+    - GET /api/v1/auth/me
+  system:
+    - GET /api/v1/system/summary
+    - GET /api/v1/system/cpu
+    - GET /api/v1/system/memory
+    - GET /api/v1/system/temperatures
+    - GET /api/v1/system/processes
+  power:
+    - GET /api/v1/power/current
+    - GET /api/v1/power/history
+    - GET /api/v1/power/daily
+  storage:
+    - GET /api/v1/storage/devices
+    - GET /api/v1/storage/filesystems
+    - GET /api/v1/storage/devices/{device_id}/smart
+  network:
+    - GET /api/v1/network/interfaces
+    - GET /api/v1/network/traffic
+    - GET /api/v1/network/connections
+  vpn:
+    mihomo:
+      - GET /api/v1/vpn/mihomo/status
+      - GET /api/v1/vpn/mihomo/proxies
+      - GET /api/v1/vpn/mihomo/traffic
+      - GET /api/v1/vpn/mihomo/connections
+    tailscale:
+      - GET /api/v1/vpn/tailscale/status
+      - GET /api/v1/vpn/tailscale/peers
+  services:
+    - GET /api/v1/services
+    - GET /api/v1/services/{service_id}
+    - POST /api/v1/services
+    - PUT /api/v1/services/{service_id}
+    - DELETE /api/v1/services/{service_id}
+  alerts:
+    - GET /api/v1/alerts
+    - POST /api/v1/alerts/{alert_id}/acknowledge
+  health:
+    - GET /health
+    - GET /api/v1/health
+notes:
+  - All write endpoints require authenticated admin and CSRF protection when cookie sessions are used.
+  - Never expose Mihomo Secret.
+  - Deleting a service inventory entry must never stop or uninstall the underlying service.
+  - Missing metrics must be represented as unavailable, not zero.

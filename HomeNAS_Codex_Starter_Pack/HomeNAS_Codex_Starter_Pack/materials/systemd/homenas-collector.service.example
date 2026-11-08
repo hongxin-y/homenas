@@ -1,0 +1,32 @@
+# Example only. Validate CAP_PERFMON and actual collector requirements.
+[Unit]
+Description=HomeNAS Metrics Collector
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=homenas-collector
+Group=homenas-collector
+WorkingDirectory=/opt/homenas/backend
+EnvironmentFile=-/etc/homenas/homenas.env
+ExecStart=/opt/homenas/venv/bin/python -m homenas.collector
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadOnlyPaths=/sys /proc
+ReadWritePaths=/var/lib/homenas /run/homenas
+
+# Uncomment only after validating this is necessary and sufficient:
+# AmbientCapabilities=CAP_PERFMON
+# CapabilityBoundingSet=CAP_PERFMON
+
+[Install]
+WantedBy=multi-user.target

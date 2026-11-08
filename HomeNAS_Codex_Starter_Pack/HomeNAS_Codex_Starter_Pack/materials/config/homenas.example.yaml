@@ -1,0 +1,99 @@
+# Example only. Copy to /etc/homenas/config.yaml after reviewing the real host.
+app:
+  name: HomeNAS
+  environment: production
+  language: zh-CN
+
+server:
+  host: "127.0.0.1"
+  port: 8765
+  trusted_proxy_cidrs: []
+  public_registration: false
+
+auth:
+  bootstrap_admin_password_env: HOMENAS_BOOTSTRAP_ADMIN_PASSWORD
+  session_ttl_minutes: 720
+  login_rate_limit_per_minute: 5
+  cookie_name: homenas_session
+  cookie_secure: true
+  cookie_http_only: true
+  cookie_same_site: lax
+
+database:
+  path: /var/lib/homenas/homenas.db
+  journal_mode: WAL
+  busy_timeout_ms: 5000
+  write_batch_size: 100
+
+collector:
+  cpu_memory_interval_seconds: 2
+  temperature_interval_seconds: 5
+  power_interval_seconds: 1
+  network_interval_seconds: 2
+  disk_usage_interval_seconds: 30
+  smart_interval_seconds: 21600
+  service_status_interval_seconds: 30
+  health_check_interval_seconds: 30
+
+power:
+  enabled: true
+  backend: perf
+  events:
+    - power/energy-pkg/
+    - power/energy-cores/
+    - power/energy-gpu/
+    - power/energy-ram/
+    - power/energy-psys/
+  primary_domain: package
+  experimental_domains: [psys]
+  never_sum_domains: true
+  label_package_as_whole_system_power: false
+
+storage:
+  discover_devices: true
+  smart_enabled: true
+  read_only: true
+  scan_interval_seconds: 21600
+
+network:
+  include_loopback: false
+  include_virtual_interfaces: true
+  never_sum_physical_and_overlay_interfaces: true
+
+mihomo:
+  enabled: false
+  controller_url: http://127.0.0.1:9090
+  secret_file: /etc/homenas/secrets/mihomo.secret
+  mode: read_only
+
+tailscale:
+  enabled: true
+  binary_path: /usr/bin/tailscale
+  status_mode: read_only
+
+seafile:
+  enabled: true
+  healthcheck_url: null
+  deployment: unknown
+
+services:
+  manifest_directory: /etc/homenas/services.d
+  discover_systemd: true
+  discover_docker_if_installed: true
+  port_scan_is_advisory_only: true
+
+retention:
+  live_ring_buffer_minutes: 5
+  aggregate_5s_days: 7
+  aggregate_1m_days: 90
+  aggregate_1h_days: 730
+  daily_energy_days: 0
+
+alerts:
+  disk_warning_percent: 85
+  disk_critical_percent: 95
+  cpu_temperature_warning_c: 85
+  cpu_temperature_critical_c: 95
+  memory_warning_percent: 90
+  default_persistence_seconds: 60
+  recovery_hysteresis_percent: 3

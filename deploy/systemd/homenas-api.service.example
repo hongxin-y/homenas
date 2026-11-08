@@ -1,0 +1,23 @@
+[Unit]
+Description=HomeNAS read-only monitoring API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=homenas
+Group=homenas
+WorkingDirectory=/opt/homenas
+EnvironmentFile=-/etc/homenas/homenas.env
+ExecStart=/opt/homenas/venv/bin/uvicorn homenas.main:app --app-dir /opt/homenas/backend --host 127.0.0.1 --port 8787
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/homenas /var/log/homenas
+
+[Install]
+WantedBy=multi-user.target
+

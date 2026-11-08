@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HomeNAS · 家庭 NAS 状态中心</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <section id="login-view" class="login-shell">
+      <div class="login-card">
+        <div class="brand-mark">HN</div>
+        <p class="eyebrow">PRIVATE NAS CONSOLE</p>
+        <h1>HomeNAS</h1>
+        <p class="muted">通过 VPN 安全查看家庭 NAS 的实时状态。</p>
+        <form id="login-form">
+          <label>管理员账号<input id="username" value="admin" autocomplete="username" required /></label>
+          <label>密码<input id="password" type="password" autocomplete="current-password" required /></label>
+          <button class="primary-button" type="submit">登录控制台</button>
+          <p id="login-error" class="form-error" role="alert"></p>
+        </form>
+      </div>
+    </section>
+
+    <section id="dashboard-view" class="dashboard hidden">
+      <aside class="sidebar">
+        <div class="brand"><div class="brand-mark small">HN</div><div><strong>HomeNAS</strong><span>Private console</span></div></div>
+        <nav id="nav" aria-label="主导航">
+          <button class="nav-item active" data-page="overview">总览 <span>01</span></button>
+          <button class="nav-item" data-page="system">系统 <span>02</span></button>
+          <button class="nav-item" data-page="power">功耗 <span>03</span></button>
+          <button class="nav-item" data-page="storage">存储 <span>04</span></button>
+          <button class="nav-item" data-page="network">网络 <span>05</span></button>
+          <button class="nav-item" data-page="vpn">VPN <span>06</span></button>
+          <button class="nav-item" data-page="services">服务 <span>07</span></button>
+          <button class="nav-item" data-page="alerts">告警 <span id="nav-alert-count">—</span></button>
+        </nav>
+        <div class="sidebar-footer"><div class="status-dot"></div><span>Local read-only mode</span><button id="logout-button">退出</button></div>
+      </aside>
+      <main class="content">
+        <header class="topbar"><div><p class="eyebrow" id="page-eyebrow">OVERVIEW</p><h2 id="page-title">总览</h2></div><div class="top-actions"><span id="last-updated" class="muted">等待采集…</span><button id="refresh-button" class="ghost-button">刷新</button></div></header>
+        <div id="page-content"></div>
+      </main>
+    </section>
+  </div>
+  <script src="/static/main.js" defer></script>
+</body>
+</html>
+

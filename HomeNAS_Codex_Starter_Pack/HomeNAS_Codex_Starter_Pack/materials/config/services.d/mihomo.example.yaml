@@ -1,0 +1,24 @@
+id: mihomo
+name: Mihomo
+description: Existing outbound proxy service
+category: network
+discovery: manual
+deployment: unknown
+enabled: true
+health:
+  type: process_and_api
+  interval_seconds: 30
+  timeout_seconds: 5
+controller:
+  url: http://127.0.0.1:9090
+  secret_file: /etc/homenas/secrets/mihomo.secret
+  mode: read_only
+systemd:
+  units: []
+access:
+  url: null
+notes:
+  - Never expose controller Secret to the browser.
+  - Never proxy arbitrary controller URLs.
+  - Do not overwrite existing Mihomo configuration.
+  - Start with read-only API integration.

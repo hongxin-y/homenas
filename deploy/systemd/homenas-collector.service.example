@@ -1,0 +1,23 @@
+[Unit]
+Description=HomeNAS read-only collector worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=homenas
+Group=homenas
+WorkingDirectory=/opt/homenas
+EnvironmentFile=-/etc/homenas/homenas.env
+ExecStart=/opt/homenas/venv/bin/python -m homenas.collector_worker
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/homenas /var/log/homenas
+
+[Install]
+WantedBy=multi-user.target
+

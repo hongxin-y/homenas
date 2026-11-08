@@ -1,0 +1,19 @@
+[project]
+name = "homenas"
+version = "0.1.0"
+description = "Read-only HomeNAS monitoring dashboard"
+requires-python = ">=3.8"
+dependencies = [
+  "fastapi>=0.95,<0.116",
+  "uvicorn[standard]>=0.22,<0.35",
+  "psutil>=5.9,<7",
+  "pydantic>=1.10,<3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7,<9", "httpx>=0.23,<0.28"]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+

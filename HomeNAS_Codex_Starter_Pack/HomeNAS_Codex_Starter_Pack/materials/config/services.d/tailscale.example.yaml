@@ -1,0 +1,20 @@
+id: tailscale
+name: Tailscale
+description: Existing remote access network
+category: vpn
+discovery: manual
+deployment: systemd
+enabled: true
+collector:
+  binary_path: /usr/bin/tailscale
+  status_command: ["status", "--json"]
+  mode: read_only
+  interval_seconds: 30
+systemd:
+  units: ["tailscaled.service"]
+access:
+  url: null
+notes:
+  - Existing Tailscale installation is already working.
+  - Do not run up/down/logout.
+  - Do not modify ACL, routes, auth keys or Tailnet settings.

@@ -1,0 +1,27 @@
+id: seafile
+name: Seafile CE
+description: Existing file sync and storage service
+category: file_service
+discovery: manual
+deployment: unknown  # systemd | docker | external | unknown
+enabled: true
+health:
+  type: http
+  url: null  # Set only after verifying the actual local endpoint.
+  interval_seconds: 30
+  timeout_seconds: 5
+  expected_status: [200]
+systemd:
+  units: []
+docker:
+  container_names: []
+access:
+  url: null
+monitoring:
+  cpu: true
+  memory: true
+  status: true
+notes:
+  - Do not modify Seafile internal database.
+  - Do not modify Seafile storage layout.
+  - HomeNAS only monitors this service.
