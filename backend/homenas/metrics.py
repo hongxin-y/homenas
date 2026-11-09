@@ -390,14 +390,14 @@ def collect_alerts(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
     return alerts
 
 
-def collect_snapshot(state: CollectorState) -> Dict[str, Any]:
+def collect_snapshot(state: CollectorState, power_override: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     vpn = collect_vpn()
     seafile = collect_seafile()
     services = collect_services(seafile, vpn)
     snapshot = {
         "timestamp": utc_now(),
         "system": collect_system(),
-        "power": collect_power(state),
+        "power": power_override if power_override is not None else collect_power(state),
         "storage": collect_storage(),
         "network": collect_network(state),
         "vpn": vpn,

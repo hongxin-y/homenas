@@ -8,6 +8,7 @@
 - API 只监听 `127.0.0.1:8787`，通过现有反向代理接入。
 - 采用 `NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome` 和固定可写目录。
 - 没有 Docker Socket、任意 Shell 或磁盘写入权限。
+- Perf RAPL 采集需要 `CAP_PERFMON`，模板只给独立 Collector 进程该能力，不降低 `kernel.perf_event_paranoid`，API 仍以非 root 用户运行。
 
 目标 NAS 上需要先完成 perf、SMART、Seafile、Mihomo Controller 和反向代理的权限/路径审计，再另行提交具体安装、影响和回滚方案。未经批准不得执行这些模板。
 

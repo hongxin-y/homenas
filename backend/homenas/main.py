@@ -184,7 +184,7 @@ async def alerts(request: Request, user: str = Depends(current_user)) -> Dict[st
 
 @app.get("/api/metrics/{metric}")
 async def metrics(metric: str, request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
-    allowed = {"cpu.percent", "memory.percent", "temperature.cpu", "network.rx", "network.tx"}
+    allowed = {"cpu.percent", "memory.percent", "temperature.cpu", "network.rx", "network.tx", "power.package", "power.cores", "power.gpu", "power.dram", "power.psys"}
     if metric not in allowed:
         raise HTTPException(status_code=404, detail="未知指标")
     return {"metric": metric, "samples": request.app.state.db.recent_metrics(metric)}
@@ -238,8 +238,8 @@ async def v1_power_history(request: Request, user: str = Depends(current_user)) 
 
 
 @app.get("/api/v1/power/daily")
-async def v1_power_daily(user: str = Depends(current_user)) -> Dict[str, Any]:
-    return {"available": False, "records": [], "reason": "长期 RAPL 采集尚未在目标 NAS 启用"}
+async def v1_power_daily(request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
+    return request.app.state.db.energy_summary()
 
 
 @app.get("/api/v1/storage/devices")
@@ -323,7 +323,7 @@ async def websocket_updates(websocket: WebSocket):
             await asyncio.sleep(5)
             snapshot = websocket.app.state.collector.latest
             if snapshot:
-                await websocket.send_json({"timestamp": snapshot["timestamp"], "system": snapshot["system"], "alerts": snapshot["alerts"]})
+                await websocket.send_json({"timestamp": snapshot["timestamp"], "system": snapshot["system"], "power": snapshot.get("power"), "alerts": snapshot["alerts"]})
     except (WebSocketDisconnect, asyncio.CancelledError):
         return
 

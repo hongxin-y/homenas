@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from .config import COLLECT_INTERVAL_SECONDS
 from .db import Database
 from .metrics import CollectorState, collect_snapshot
+from .power import PerfRAPLCollector
 
 
 async def _to_thread(func, *args):
@@ -31,6 +32,9 @@ def metric_samples(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
     power = snapshot.get("power") or {}
     if power.get("package_watts") is not None:
         samples.append({"metric": "power.package", "value": power["package_watts"], "unit": "W", "source": power.get("source"), "ts": snapshot["timestamp"]})
+    for domain, item in (power.get("domains") or {}).items():
+        if item.get("watts") is not None:
+            samples.append({"metric": f"power.{domain}", "value": item["watts"], "unit": "W", "source": item.get("source") or power.get("source"), "ts": snapshot["timestamp"]})
     return samples
 
 
@@ -40,15 +44,27 @@ class Collector:
         self.state = CollectorState()
         self.latest: Optional[Dict[str, Any]] = None
         self._stop = asyncio.Event()
+        self.power_collector = PerfRAPLCollector()
+
+    async def start(self) -> Dict[str, Any]:
+        await _to_thread(self.power_collector.ensure_running)
+        return await self.collect_once()
 
     async def collect_once(self) -> Dict[str, Any]:
-        snapshot = await _to_thread(collect_snapshot, self.state)
-        self.latest = snapshot
+        await _to_thread(self.power_collector.ensure_running)
+        perf_power = await _to_thread(self.power_collector.snapshot)
+        power_override = perf_power if self.power_collector.enabled else None
+        snapshot = await _to_thread(collect_snapshot, self.state, power_override)
+        energy_samples = await _to_thread(self.power_collector.drain_samples)
+        await _to_thread(self.db.add_energy_samples, energy_samples)
         await _to_thread(self.db.add_metric_samples, metric_samples(snapshot))
         await _to_thread(self.db.write_alerts, snapshot["alerts"])
+        snapshot["power"]["daily"] = await _to_thread(self.db.energy_summary)
+        self.latest = snapshot
         return snapshot
 
     async def run(self) -> None:
+        await self.start()
         while not self._stop.is_set():
             try:
                 await self.collect_once()
@@ -65,4 +81,5 @@ class Collector:
 
     async def stop(self) -> None:
         self._stop.set()
+        await _to_thread(self.power_collector.stop)
 

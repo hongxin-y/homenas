@@ -17,6 +17,10 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/homenas /var/log/homenas
+# perf_event_paranoid remains unchanged. Grant only the collector CAP_PERFMON
+# capability when the target-NAS review approves it; the Web API stays unprivileged.
+CapabilityBoundingSet=CAP_PERFMON
+AmbientCapabilities=CAP_PERFMON
 
 [Install]
 WantedBy=multi-user.target

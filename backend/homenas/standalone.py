@@ -35,7 +35,7 @@ class Runtime:
     def start(self) -> None:
         import asyncio
 
-        asyncio.run(self.collector.collect_once())
+        asyncio.run(self.collector.start())
         self.thread.start()
 
     def loop(self) -> None:
@@ -47,6 +47,9 @@ class Runtime:
     def close(self) -> None:
         self.stop.set()
         self.thread.join(timeout=2)
+        import asyncio
+
+        asyncio.run(self.collector.stop())
         self.db.close()
 
 
@@ -148,6 +151,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/v1/system/memory": "/api/system",
             "/api/v1/system/temperatures": "/api/system",
             "/api/v1/power/current": "/api/power",
+            "/api/v1/power/daily": "/api/power/daily",
             "/api/v1/storage/filesystems": "/api/storage",
             "/api/v1/storage/devices": "/api/storage",
             "/api/v1/network/interfaces": "/api/network",
@@ -177,6 +181,10 @@ class Handler(BaseHTTPRequestHandler):
                     for x in history
                 ],
             })
+            return
+        if path == "/api/power/daily":
+            if self.require_user():
+                self.write_json(self.app_runtime.db.energy_summary())
             return
         if path == "/api/alerts":
             if self.require_user():

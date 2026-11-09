@@ -165,6 +165,60 @@ class Database:
             )
             self.conn.commit()
 
+    def add_energy_samples(self, samples: List[Dict[str, Any]]) -> None:
+        """Persist only valid perf intervals; unavailable samples are omitted."""
+        valid = [sample for sample in samples if sample.get("quality") == "ok" and sample.get("joules") is not None]
+        if not valid:
+            return
+        with self._lock:
+            self.conn.executemany(
+                "INSERT INTO energy_records(ts, domain, energy_j, watts, quality, source) VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        sample.get("ts") or utc_now(),
+                        sample["domain"],
+                        sample.get("joules"),
+                        sample.get("watts"),
+                        sample.get("quality", "ok"),
+                        sample.get("source", "perf/RAPL"),
+                    )
+                    for sample in valid
+                ],
+            )
+            self.conn.commit()
+
+    def energy_summary(self, day: Optional[str] = None) -> Dict[str, Any]:
+        """Return local-calendar-day energy totals in J, Wh and kWh."""
+        requested_day = day or datetime.now().astimezone().date().isoformat()
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT domain, SUM(energy_j) AS joules, AVG(watts) AS average_watts, "
+                "MAX(watts) AS peak_watts, COUNT(*) AS samples "
+                "FROM energy_records WHERE quality='ok' AND date(ts, 'localtime') = ? GROUP BY domain",
+                (requested_day,),
+            ).fetchall()
+        domains: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            joules = float(row["joules"] or 0.0)
+            domains[row["domain"]] = {
+                "joules": joules,
+                "wh": joules / 3600.0,
+                "kwh": joules / 3600000.0,
+                "average_watts": float(row["average_watts"]) if row["average_watts"] is not None else None,
+                "peak_watts": float(row["peak_watts"]) if row["peak_watts"] is not None else None,
+                "samples": int(row["samples"]),
+            }
+        total_joules = sum(item["joules"] for item in domains.values()) if domains else None
+        return {
+            "available": bool(domains),
+            "day": requested_day,
+            "domains": domains,
+            "total_joules": total_joules,
+            "total_wh": total_joules / 3600.0 if total_joules is not None else None,
+            "total_kwh": total_joules / 3600000.0 if total_joules is not None else None,
+            "semantics": "仅累计有效 perf/RAPL 区间；各 domain 不应相加解释为插座功耗。",
+        }
+
     def recent_metrics(self, metric: str, limit: int = 60) -> List[Dict[str, Any]]:
         with self._lock:
             rows = self.conn.execute(
