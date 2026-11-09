@@ -70,6 +70,11 @@ def main():
                 assert_true("system" in data and "storage" in data and "network" in data, "overview endpoint")
             with opener.open(base + "/api/v1/system/summary") as response:
                 assert_true("cpu_percent" in json.loads(response.read()), "v1 compatibility endpoint")
+            with opener.open(base + "/api/v1/power/daily") as response:
+                assert_true("total_wh" in json.loads(response.read()), "power daily endpoint")
+            request = urllib.request.Request(base + "/api/vpn/ping", data=json.dumps({"target": "127.0.0.1"}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+            with opener.open(request) as response:
+                assert_true(json.loads(response.read())["status"] == "reachable", "authenticated ping endpoint")
         finally:
             server.shutdown()
             server.server_close()

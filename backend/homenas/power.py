@@ -152,7 +152,6 @@ class PerfRAPLCollector:
             return
         self._process = process
         self.status = "starting"
-        self.last_error = None
         self._reader = threading.Thread(target=self._read_stderr, args=(process,), name="homenas-perf-rapl", daemon=True)
         self._reader.start()
 
@@ -182,8 +181,9 @@ class PerfRAPLCollector:
                 else:
                     self.status = "exited"
                     self.last_error = "perf process exited"
-                self._next_restart = time.monotonic() + self._backoff
-                self._backoff = min(self._backoff * 2, 60.0)
+                retry_delay = 60.0 if self.status == "permission_denied" else self._backoff
+                self._next_restart = time.monotonic() + retry_delay
+                self._backoff = min(max(self._backoff * 2, self.restart_delay), 60.0)
 
     @staticmethod
     def _looks_like_permission_error(message: Optional[str]) -> bool:
@@ -199,6 +199,7 @@ class PerfRAPLCollector:
                     self.last_error = "perf permission denied; CAP_PERFMON or an approved perf policy is required"
                     self.status = "permission_denied"
                     self._latest.clear()
+                    self._next_restart = time.monotonic() + 60.0
             return
         domain = record["domain"]
         if not record.get("available"):

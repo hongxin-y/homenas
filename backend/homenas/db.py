@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS energy_records (
     quality TEXT NOT NULL DEFAULT 'unavailable',
     source TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_energy_records_ts_domain
+    ON energy_records(ts, domain);
 CREATE TABLE IF NOT EXISTS network_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
