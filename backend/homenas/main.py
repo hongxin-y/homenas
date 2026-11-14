@@ -12,10 +12,10 @@ from pydantic import BaseModel, Field
 
 from .auth import AuthManager
 from .collector import Collector
-from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, FRONTEND_DIR, SESSION_TTL_SECONDS, ensure_runtime_dir
+from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, ELECTRICITY_TARIFF_TIER, FRONTEND_DIR, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
 from .integrations import mihomo_rule_draft, ping_target, select_mihomo_proxy
-from .power_cost import parse_period, period_cost
+from .power_cost import parse_period, period_cost, shanghai_tariff
 
 
 class LoginRequest(BaseModel):
@@ -218,13 +218,22 @@ async def metrics(metric: str, request: Request, user: str = Depends(current_use
 
 
 @app.get("/api/power/cost")
-async def power_cost(request: Request, start: Optional[str] = None, end: Optional[str] = None, price: Optional[float] = None, user: str = Depends(current_user)) -> Dict[str, Any]:
+async def power_cost(request: Request, start: Optional[str] = None, end: Optional[str] = None, price: Optional[float] = None, tier: Optional[int] = None, user: str = Depends(current_user)) -> Dict[str, Any]:
     try:
         start_date, end_date = parse_period(start, end)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     summary = await asyncio.to_thread(request.app.state.db.energy_period, start_date, end_date)
-    return period_cost(summary, price if price is not None else ELECTRICITY_PRICE_CNY_PER_KWH, start_date, end_date)
+    records = await asyncio.to_thread(request.app.state.db.energy_records_for_period, start_date, end_date)
+    selected_tier = tier if tier in (1, 2, 3) else ELECTRICITY_TARIFF_TIER
+    return period_cost(
+        summary,
+        price if price is not None else ELECTRICITY_PRICE_CNY_PER_KWH,
+        start_date,
+        end_date,
+        records,
+        shanghai_tariff(selected_tier),
+    )
 
 
 # Read-only v1 compatibility surface from the Starter Pack API outline. The
@@ -280,8 +289,8 @@ async def v1_power_daily(request: Request, user: str = Depends(current_user)) ->
 
 
 @app.get("/api/v1/power/cost")
-async def v1_power_cost(request: Request, start: Optional[str] = None, end: Optional[str] = None, price: Optional[float] = None, user: str = Depends(current_user)) -> Dict[str, Any]:
-    return await power_cost(request, start, end, price, user)
+async def v1_power_cost(request: Request, start: Optional[str] = None, end: Optional[str] = None, price: Optional[float] = None, tier: Optional[int] = None, user: str = Depends(current_user)) -> Dict[str, Any]:
+    return await power_cost(request, start, end, price, tier, user)
 
 
 @app.get("/api/v1/storage/devices")

@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from homenas.db import Database  # noqa: E402
 from homenas.power import PerfRAPLCollector, parse_perf_record  # noqa: E402
+from homenas.power_cost import period_cost, shanghai_tariff, tariff_band  # noqa: E402
 
 
 def check(condition, message):
@@ -28,6 +29,18 @@ def main():
     check(round(samples[1]["elapsed_s"], 3) == 1.25, "actual interval")
     check(round(samples[1]["watts"], 3) == 15.0, "watts conversion")
     check(round(collector.snapshot()["package_energy_j"], 2) == 33.17, "energy accumulation")
+    tariff = shanghai_tariff(1)
+    check(tariff_band("2026-11-09T18:00:00+00:00", tariff)[2] == 0.307, "Shanghai valley tariff")
+    check(tariff_band("2026-11-09T10:00:00+00:00", tariff)[2] == 0.617, "Shanghai peak tariff")
+    priced = period_cost(
+        {"domains": {"package": {"kwh": 2.0}}},
+        0.6,
+        "2026-11-09",
+        "2026-11-09",
+        [("2026-11-09T18:00:00+00:00", 3600000.0), ("2026-11-09T10:00:00+00:00", 3600000.0)],
+        tariff,
+    )
+    check(round(priced["package_cost_cny"], 3) == 0.924, "Shanghai peak/valley costing")
     collector._handle_line("Access to performance monitoring is limited")
     check(collector.snapshot()["package_watts"] is None, "permission unavailable")
     with tempfile.TemporaryDirectory() as folder:

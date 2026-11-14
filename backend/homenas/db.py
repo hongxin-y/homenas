@@ -236,6 +236,24 @@ class Database:
             "semantics": "total_* 仅代表 Package；其他 domain 分开累计，不能相加解释为插座功耗。",
         }
 
+    def energy_records_for_period(self, start: str, end: str) -> List[tuple[str, float]]:
+        """Return valid CPU Package intervals for time-of-use billing.
+
+        Each row is an interval energy value, timestamped by the collector.
+        The query deliberately excludes every non-Package RAPL domain so the
+        tariff calculation cannot accidentally turn component readings into
+        an outlet-power estimate.
+        """
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT ts, energy_j FROM energy_records "
+                "WHERE quality='ok' AND domain='package' "
+                "AND date(ts, 'localtime') >= ? AND date(ts, 'localtime') <= ? "
+                "ORDER BY ts",
+                (start, end),
+            ).fetchall()
+        return [(str(row["ts"]), float(row["energy_j"])) for row in rows if row["energy_j"] is not None]
+
     def recent_metrics(self, metric: str, limit: int = 60) -> List[Dict[str, Any]]:
         with self._lock:
             rows = self.conn.execute(

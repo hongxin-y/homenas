@@ -18,10 +18,10 @@ from urllib.parse import parse_qs, urlparse
 
 from .auth import AuthManager
 from .collector import Collector
-from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, FRONTEND_DIR, HOST, PORT, SESSION_TTL_SECONDS, ensure_runtime_dir
+from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, ELECTRICITY_TARIFF_TIER, FRONTEND_DIR, HOST, PORT, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
 from .integrations import mihomo_rule_draft, ping_target, select_mihomo_proxy
-from .power_cost import parse_period, period_cost
+from .power_cost import parse_period, period_cost, shanghai_tariff
 
 
 class Runtime:
@@ -221,7 +221,14 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 price = ELECTRICITY_PRICE_CNY_PER_KWH
             summary = self.app_runtime.db.energy_period(start, end)
-            self.write_json(period_cost(summary, price, start, end))
+            tier_value = (query.get("tier") or [str(ELECTRICITY_TARIFF_TIER)])[0]
+            try:
+                requested_tier = int(tier_value)
+            except (TypeError, ValueError):
+                requested_tier = ELECTRICITY_TARIFF_TIER
+            selected_tier = requested_tier if requested_tier in (1, 2, 3) else ELECTRICITY_TARIFF_TIER
+            records = self.app_runtime.db.energy_records_for_period(start, end)
+            self.write_json(period_cost(summary, price, start, end, records, shanghai_tariff(selected_tier)))
             return
         if path == "/api/alerts":
             if self.require_user():

@@ -47,7 +47,7 @@ npm run --prefix frontend build
 
 真实 NAS 服务探测默认关闭。只有在目标 NAS 上完成权限和配置审计后，才通过 `HOMENAS_ENABLE_EXTERNAL_PROBES=1` 开启固定的只读 Tailscale、Mihomo Controller、Seafile health、systemd 和 Docker 探测；浏览器不能传入命令、URL 或 Secret。
 
-功耗页按 CPU Package RAPL 计算当前每小时、每日和年化电费，默认电价为 `0.60` 元/kWh，可通过 `HOMENAS_ELECTRICITY_PRICE_CNY_PER_KWH` 调整；日期区间查询仍只按 Package 计费，不把其他 RAPL domain 相加。VPN 页支持 Controller 节点切换的受控接口和规则草稿校验；`HOMENAS_ENABLE_MIHOMO_MUTATIONS` 默认关闭，保持 NAS 上 Mihomo 只读。
+功耗页按 CPU Package RAPL 计算当前每小时、每日和年化电费，默认使用上海市居民一户一表分时电价（一档，可通过 `HOMENAS_ELECTRICITY_TARIFF_TIER=1|2|3` 选择年度档位）：峰时 06:00–22:00，谷时 22:00–06:00。日期区间查询按每个有效 Package 采样所在的北京时间段计费，并显示峰/谷明细；不把其他 RAPL domain 相加。若需要临时使用平价估算，仍可设置 `HOMENAS_ELECTRICITY_PRICE_CNY_PER_KWH` 作为无分时数据时的后备值。VPN 页支持 Controller 节点切换的受控接口和规则草稿校验；`HOMENAS_ENABLE_MIHOMO_MUTATIONS` 默认关闭，保持 NAS 上 Mihomo 只读。
 
 ## 安全边界
 

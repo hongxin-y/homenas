@@ -73,9 +73,9 @@ def main():
                 assert_true("cpu_percent" in json.loads(response.read()), "v1 compatibility endpoint")
             with opener.open(base + "/api/v1/power/daily") as response:
                 assert_true("total_wh" in json.loads(response.read()), "power daily endpoint")
-            with opener.open(base + "/api/power/cost?start=2026-01-01&end=2026-01-01&price=0.6") as response:
+            with opener.open(base + "/api/power/cost?start=2026-01-01&end=2026-01-01&tier=1") as response:
                 cost = json.loads(response.read())
-                assert_true("package_cost_cny" in cost and cost["price_cny_per_kwh"] == 0.6, "power cost endpoint")
+                assert_true("package_cost_cny" in cost and cost["tariff"]["id"] == "shanghai_residential_time_of_use", "power cost endpoint")
             request = urllib.request.Request(base + "/api/vpn/mihomo/rules/draft", data=json.dumps({"rules": ["DOMAIN-SUFFIX,example.com,Proxy"]}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
             with opener.open(request) as response:
                 assert_true(json.loads(response.read())["ok"] is True, "mihomo rule draft endpoint")

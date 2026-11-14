@@ -17,6 +17,12 @@ try:
     ELECTRICITY_PRICE_CNY_PER_KWH = float(os.getenv("HOMENAS_ELECTRICITY_PRICE_CNY_PER_KWH", "0.60"))
 except ValueError:
     ELECTRICITY_PRICE_CNY_PER_KWH = 0.60
+try:
+    ELECTRICITY_TARIFF_TIER = int(os.getenv("HOMENAS_ELECTRICITY_TARIFF_TIER", "1"))
+except ValueError:
+    ELECTRICITY_TARIFF_TIER = 1
+if ELECTRICITY_TARIFF_TIER not in (1, 2, 3):
+    ELECTRICITY_TARIFF_TIER = 1
 
 
 def ensure_runtime_dir() -> None:

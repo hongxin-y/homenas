@@ -5,7 +5,7 @@ import time
 
 from homenas.db import Database
 from homenas.power import PerfRAPLCollector, parse_perf_record
-from homenas.power_cost import current_cost, parse_period, period_cost
+from homenas.power_cost import current_cost, parse_period, period_cost, shanghai_tariff, tariff_band
 
 
 def test_parse_perf_semicolon_record_and_domain_aliases():
@@ -99,4 +99,33 @@ def test_power_cost_estimates_use_package_only():
     result = current_cost({"package_watts": 10.0}, daily, 0.6)
     assert result["daily"]["cny"] == 0.3
     assert result["annualized"]["package_kwh"] == 182.5
+
+
+def test_shanghai_residential_time_of_use_rates_and_tier_costing():
+    tariff = shanghai_tariff(1)
+    assert tariff_band("2026-11-09T18:00:00+00:00", tariff) == ("valley", "谷", 0.307)
+    assert tariff_band("2026-11-09T10:00:00+00:00", tariff) == ("peak", "峰", 0.617)
+
+    summary = {"domains": {"package": {"kwh": 1.0}}}
+    records = [
+        ("2026-11-09T18:00:00+00:00", 3600000.0),
+        ("2026-11-09T10:00:00+00:00", 3600000.0),
+    ]
+    result = period_cost(summary, 0.6, "2026-11-09", "2026-11-09", records, tariff)
+    assert result["tariff"]["id"] == "shanghai_residential_time_of_use"
+    assert round(result["package_kwh"], 3) == 2.0
+    assert round(result["package_cost_cny"], 3) == round(0.307 + 0.617, 3)
+    assert result["bands"]["valley"]["price_cny_per_kwh"] == 0.307
+    assert result["bands"]["peak"]["price_cny_per_kwh"] == 0.617
+
+
+def test_energy_records_for_period_returns_package_only(tmp_path):
+    db = Database(tmp_path / "records.db")
+    db.add_energy_samples([
+        {"ts": "2026-11-09T10:00:00+00:00", "domain": "package", "joules": 1.0, "watts": 1.0, "quality": "ok"},
+        {"ts": "2026-11-09T02:00:01+00:00", "domain": "psys", "joules": 2.0, "watts": 2.0, "quality": "ok"},
+    ])
+    records = db.energy_records_for_period("2026-11-09", "2026-11-09")
+    assert records == [("2026-11-09T10:00:00+00:00", 1.0)]
+    db.close()
 
