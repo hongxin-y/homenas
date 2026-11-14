@@ -40,6 +40,7 @@ button:disabled { cursor:wait; opacity:.55; }
 .ping-result.success { color:var(--accent); border:1px solid #2d6e65; }
 .ping-result.failure { color:var(--danger); border:1px solid #713844; }
 .table-search { width:100%; margin-bottom:12px; }
+.code-input { width:100%; min-height:150px; margin-bottom:12px; padding:12px; color:var(--text); background:#0e1520; border:1px solid var(--line); border-radius:10px; font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace; resize:vertical; }
 .rule-payload { max-width:380px; overflow:hidden; text-overflow:ellipsis; }
 .compact-table { margin-top:16px; max-height:360px; }
 .compact-table table { font-size:11px; }

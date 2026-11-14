@@ -197,12 +197,19 @@ class Database:
         Package, Cores, GPU, DRAM and PSys into an outlet-power estimate.
         """
         requested_day = day or datetime.now().astimezone().date().isoformat()
+        summary = self.energy_period(requested_day, requested_day)
+        summary["day"] = requested_day
+        return summary
+
+    def energy_period(self, start: str, end: str) -> Dict[str, Any]:
+        """Return per-domain energy for an inclusive local-calendar date range."""
         with self._lock:
             rows = self.conn.execute(
                 "SELECT domain, SUM(energy_j) AS joules, AVG(watts) AS average_watts, "
                 "MAX(watts) AS peak_watts, COUNT(*) AS samples "
-                "FROM energy_records WHERE quality='ok' AND date(ts, 'localtime') = ? GROUP BY domain",
-                (requested_day,),
+                "FROM energy_records WHERE quality='ok' AND date(ts, 'localtime') >= ? "
+                "AND date(ts, 'localtime') <= ? GROUP BY domain",
+                (start, end),
             ).fetchall()
         domains: Dict[str, Dict[str, Any]] = {}
         for row in rows:
@@ -219,7 +226,8 @@ class Database:
         package_joules = package["joules"] if package is not None else None
         return {
             "available": bool(domains),
-            "day": requested_day,
+            "start": start,
+            "end": end,
             "domains": domains,
             "total_domain": "package" if package is not None else None,
             "total_joules": package_joules,

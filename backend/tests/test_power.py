@@ -5,6 +5,7 @@ import time
 
 from homenas.db import Database
 from homenas.power import PerfRAPLCollector, parse_perf_record
+from homenas.power_cost import current_cost, parse_period, period_cost
 
 
 def test_parse_perf_semicolon_record_and_domain_aliases():
@@ -87,5 +88,15 @@ def test_energy_records_persist_and_daily_summary(tmp_path):
     assert summary["total_domain"] == "package"
     assert round(summary["total_joules"], 2) == 33.17
     assert "gpu" not in summary["domains"]
+    period = db.energy_period("2026-11-09", "2026-11-09")
+    assert round(period_cost(period, 0.6, "2026-11-09", "2026-11-09")["package_cost_cny"], 6) == round(33.17 / 3600000 * 0.6, 6)
     db.close()
+
+
+def test_power_cost_estimates_use_package_only():
+    assert parse_period("2026-11-01", "2026-11-03") == ("2026-11-01", "2026-11-03")
+    daily = {"day": "2026-11-09", "domains": {"package": {"kwh": 0.5}, "psys": {"kwh": 0.2}}}
+    result = current_cost({"package_watts": 10.0}, daily, 0.6)
+    assert result["daily"]["cny"] == 0.3
+    assert result["annualized"]["package_kwh"] == 182.5
 

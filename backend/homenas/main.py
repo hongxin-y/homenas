@@ -12,9 +12,10 @@ from pydantic import BaseModel, Field
 
 from .auth import AuthManager
 from .collector import Collector
-from .config import ADMIN_PASSWORD, DB_PATH, FRONTEND_DIR, SESSION_TTL_SECONDS, ensure_runtime_dir
+from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, FRONTEND_DIR, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
-from .integrations import ping_target
+from .integrations import mihomo_rule_draft, ping_target, select_mihomo_proxy
+from .power_cost import parse_period, period_cost
 
 
 class LoginRequest(BaseModel):
@@ -24,6 +25,15 @@ class LoginRequest(BaseModel):
 
 class PingRequest(BaseModel):
     target: str = Field(min_length=1, max_length=253)
+
+
+class MihomoSelectRequest(BaseModel):
+    group: str = Field(min_length=1, max_length=256)
+    node: str = Field(min_length=1, max_length=256)
+
+
+class MihomoRuleDraftRequest(BaseModel):
+    rules: list[str] = Field(default_factory=list, max_length=500)
 
 
 def _bearer(authorization: Optional[str]) -> Optional[str]:
@@ -167,6 +177,23 @@ async def vpn_ping(payload: PingRequest, request: Request, user: str = Depends(c
     return result
 
 
+@app.post("/api/vpn/mihomo/select")
+async def mihomo_select(payload: MihomoSelectRequest, request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
+    result = await asyncio.to_thread(select_mihomo_proxy, payload.group, payload.node)
+    request.app.state.db.audit(user, "mihomo.select", {"group": payload.group, "node": payload.node, "status": result.get("status")})
+    if not result.get("ok"):
+        status = 403 if result.get("status") == "read-only" else 400
+        raise HTTPException(status_code=status, detail=result.get("detail") or "节点切换失败")
+    return result
+
+
+@app.post("/api/vpn/mihomo/rules/draft")
+async def mihomo_rules_draft(payload: MihomoRuleDraftRequest, request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
+    result = mihomo_rule_draft(payload.rules)
+    request.app.state.db.audit(user, "mihomo.rules_draft", {"count": result.get("count"), "ok": result.get("ok")})
+    return result
+
+
 @app.get("/api/seafile")
 async def seafile(request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
     return _snapshot(request).get("seafile", {"healthy": None, "reason": "unavailable"})
@@ -188,6 +215,16 @@ async def metrics(metric: str, request: Request, user: str = Depends(current_use
     if metric not in allowed:
         raise HTTPException(status_code=404, detail="未知指标")
     return {"metric": metric, "samples": request.app.state.db.recent_metrics(metric)}
+
+
+@app.get("/api/power/cost")
+async def power_cost(request: Request, start: Optional[str] = None, end: Optional[str] = None, price: Optional[float] = None, user: str = Depends(current_user)) -> Dict[str, Any]:
+    try:
+        start_date, end_date = parse_period(start, end)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    summary = await asyncio.to_thread(request.app.state.db.energy_period, start_date, end_date)
+    return period_cost(summary, price if price is not None else ELECTRICITY_PRICE_CNY_PER_KWH, start_date, end_date)
 
 
 # Read-only v1 compatibility surface from the Starter Pack API outline. The
@@ -240,6 +277,11 @@ async def v1_power_history(request: Request, user: str = Depends(current_user)) 
 @app.get("/api/v1/power/daily")
 async def v1_power_daily(request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
     return request.app.state.db.energy_summary()
+
+
+@app.get("/api/v1/power/cost")
+async def v1_power_cost(request: Request, start: Optional[str] = None, end: Optional[str] = None, price: Optional[float] = None, user: str = Depends(current_user)) -> Dict[str, Any]:
+    return await power_cost(request, start, end, price, user)
 
 
 @app.get("/api/v1/storage/devices")

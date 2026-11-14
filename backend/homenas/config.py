@@ -13,6 +13,10 @@ PORT = int(os.getenv("HOMENAS_PORT", "8787"))
 ADMIN_PASSWORD = os.getenv("HOMENAS_ADMIN_PASSWORD", "admin")
 COLLECT_INTERVAL_SECONDS = float(os.getenv("HOMENAS_COLLECT_INTERVAL", "5"))
 SESSION_TTL_SECONDS = int(os.getenv("HOMENAS_SESSION_TTL", "28800"))
+try:
+    ELECTRICITY_PRICE_CNY_PER_KWH = float(os.getenv("HOMENAS_ELECTRICITY_PRICE_CNY_PER_KWH", "0.60"))
+except ValueError:
+    ELECTRICITY_PRICE_CNY_PER_KWH = 0.60
 
 
 def ensure_runtime_dir() -> None:

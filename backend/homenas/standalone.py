@@ -14,13 +14,14 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .auth import AuthManager
 from .collector import Collector
-from .config import ADMIN_PASSWORD, DB_PATH, FRONTEND_DIR, HOST, PORT, SESSION_TTL_SECONDS, ensure_runtime_dir
+from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, FRONTEND_DIR, HOST, PORT, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
-from .integrations import ping_target
+from .integrations import mihomo_rule_draft, ping_target, select_mihomo_proxy
+from .power_cost import parse_period, period_cost
 
 
 class Runtime:
@@ -138,10 +139,29 @@ class Handler(BaseHTTPRequestHandler):
             self.app_runtime.db.audit(self.token_user() or "admin", "vpn.ping", {"target": result.get("target"), "status": result.get("status")})
             self.write_json(result)
             return
+        if path == "/api/vpn/mihomo/select":
+            if not self.require_user():
+                return
+            body = self.json_body()
+            result = select_mihomo_proxy(str(body.get("group", "")), str(body.get("node", "")))
+            self.app_runtime.db.audit(self.token_user() or "admin", "mihomo.select", {"group": body.get("group"), "node": body.get("node"), "status": result.get("status")})
+            status = 200 if result.get("ok") else (403 if result.get("status") == "read-only" else 400)
+            self.write_json(result, status)
+            return
+        if path == "/api/vpn/mihomo/rules/draft":
+            if not self.require_user():
+                return
+            body = self.json_body()
+            result = mihomo_rule_draft(body.get("rules", []))
+            self.app_runtime.db.audit(self.token_user() or "admin", "mihomo.rules_draft", {"count": result.get("count"), "ok": result.get("ok")})
+            self.write_json(result)
+            return
         self.write_json({"detail": "Not found"}, 404)
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
         path = {
             "/health": "/api/health",
             "/api/v1/health": "/api/health",
@@ -152,6 +172,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/v1/system/temperatures": "/api/system",
             "/api/v1/power/current": "/api/power",
             "/api/v1/power/daily": "/api/power/daily",
+            "/api/v1/power/cost": "/api/power/cost",
             "/api/v1/storage/filesystems": "/api/storage",
             "/api/v1/storage/devices": "/api/storage",
             "/api/v1/network/interfaces": "/api/network",
@@ -185,6 +206,22 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/power/daily":
             if self.require_user():
                 self.write_json(self.app_runtime.db.energy_summary())
+            return
+        if path == "/api/power/cost":
+            if not self.require_user():
+                return
+            try:
+                start, end = parse_period((query.get("start") or [None])[0], (query.get("end") or [None])[0])
+            except ValueError as exc:
+                self.write_json({"detail": str(exc)}, 400)
+                return
+            price_value = (query.get("price") or [None])[0]
+            try:
+                price = float(price_value) if price_value is not None else ELECTRICITY_PRICE_CNY_PER_KWH
+            except ValueError:
+                price = ELECTRICITY_PRICE_CNY_PER_KWH
+            summary = self.app_runtime.db.energy_period(start, end)
+            self.write_json(period_cost(summary, price, start, end))
             return
         if path == "/api/alerts":
             if self.require_user():

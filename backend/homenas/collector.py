@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from .config import COLLECT_INTERVAL_SECONDS
+from .config import COLLECT_INTERVAL_SECONDS, ELECTRICITY_PRICE_CNY_PER_KWH
 from .db import Database
 from .metrics import CollectorState, collect_snapshot
 from .power import PerfRAPLCollector
+from .power_cost import current_cost
 
 
 async def _to_thread(func, *args):
@@ -60,6 +61,7 @@ class Collector:
         await _to_thread(self.db.add_metric_samples, metric_samples(snapshot))
         await _to_thread(self.db.write_alerts, snapshot["alerts"])
         snapshot["power"]["daily"] = await _to_thread(self.db.energy_summary)
+        snapshot["power"]["cost"] = current_cost(snapshot["power"], snapshot["power"]["daily"], ELECTRICITY_PRICE_CNY_PER_KWH)
         self.latest = snapshot
         return snapshot
 

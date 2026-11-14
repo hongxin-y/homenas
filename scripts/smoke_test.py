@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 import threading
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -72,6 +73,18 @@ def main():
                 assert_true("cpu_percent" in json.loads(response.read()), "v1 compatibility endpoint")
             with opener.open(base + "/api/v1/power/daily") as response:
                 assert_true("total_wh" in json.loads(response.read()), "power daily endpoint")
+            with opener.open(base + "/api/power/cost?start=2026-01-01&end=2026-01-01&price=0.6") as response:
+                cost = json.loads(response.read())
+                assert_true("package_cost_cny" in cost and cost["price_cny_per_kwh"] == 0.6, "power cost endpoint")
+            request = urllib.request.Request(base + "/api/vpn/mihomo/rules/draft", data=json.dumps({"rules": ["DOMAIN-SUFFIX,example.com,Proxy"]}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+            with opener.open(request) as response:
+                assert_true(json.loads(response.read())["ok"] is True, "mihomo rule draft endpoint")
+            request = urllib.request.Request(base + "/api/vpn/mihomo/select", data=json.dumps({"group": "Proxy", "node": "Node"}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                opener.open(request)
+                raise AssertionError("read-only Mihomo select should be blocked")
+            except urllib.error.HTTPError as error:
+                assert_true(error.code == 403, "read-only Mihomo select guard")
             request = urllib.request.Request(base + "/api/vpn/ping", data=json.dumps({"target": "127.0.0.1"}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
             with opener.open(request) as response:
                 assert_true(json.loads(response.read())["status"] == "reachable", "authenticated ping endpoint")

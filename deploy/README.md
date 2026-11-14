@@ -9,6 +9,8 @@
 - 采用 `NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome` 和固定可写目录。
 - 没有 Docker Socket、任意 Shell 或磁盘写入权限。
 - Perf RAPL 采集通过独立的 `homenas-perf-helper.service` 运行固定的 root perf 子进程，并只通过 `/run/homenas-perf/perf.sock` 转发机器可解析输出；HomeNAS API 仍以非 root 用户运行。这样不需要降低 `kernel.perf_event_paranoid`，也不把 `CAP_SYS_ADMIN` 交给 Web API。
+- 电费估算默认按 `0.60` 元/kWh，使用 `HOMENAS_ELECTRICITY_PRICE_CNY_PER_KWH` 调整；时间段和年化统计只按 Package 能耗计算。
+- Mihomo 节点切换接口需要单独设置 `HOMENAS_ENABLE_MIHOMO_MUTATIONS=1`，当前预览 unit 不设置该变量，因此 NAS 保持只读；规则编辑先做本地草稿校验，不写入现有 Mihomo 配置。
 
 本地 NAS 预览若要启用该方案，需要一并评审并安装 `homenas-perf-helper.service.example` 和 `homenas-preview-capperf.service.example`，以及 root-owned `/usr/local/libexec/homenas-perf-helper.py`。前者只运行固定的五个 RAPL 事件，后者仍以 `hongxin` 运行。安装前需停用同端口的用户级 `homenas-preview.service`；回滚时先停止预览 unit，再停止 helper、移除 helper 文件和 unit，最后恢复用户级服务即可。
 

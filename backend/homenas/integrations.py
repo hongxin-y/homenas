@@ -15,11 +15,13 @@ import re
 import shutil
 import subprocess
 from typing import Any, Dict, List, Optional, Sequence
+from urllib.parse import quote
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
 EXTERNAL_PROBES = os.getenv("HOMENAS_ENABLE_EXTERNAL_PROBES", "0") == "1"
+MIHOMO_MUTATIONS_ENABLED = os.getenv("HOMENAS_ENABLE_MIHOMO_MUTATIONS", "0") == "1"
 
 
 def fixed_command(argv: Sequence[str], timeout: float = 3.0) -> Dict[str, Any]:
@@ -43,17 +45,27 @@ def fixed_command(argv: Sequence[str], timeout: float = 3.0) -> Dict[str, Any]:
     }
 
 
-def _controller_json(controller: str, path: str, secret: str = "", timeout: float = 3.0) -> Dict[str, Any]:
-    """Read one fixed Mihomo Controller endpoint without exposing credentials."""
-    request = Request(controller.rstrip("/") + path, method="GET")
+def _controller_call(controller: str, path: str, secret: str = "", method: str = "GET", payload: Optional[Dict[str, Any]] = None, timeout: float = 3.0) -> Dict[str, Any]:
+    """Call a fixed Mihomo Controller endpoint without exposing credentials."""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    request = Request(controller.rstrip("/") + path, data=body, method=method)
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
     if secret:
         request.add_header("Authorization", "Bearer " + secret)
     try:
         with urlopen(request, timeout=timeout) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        return body if isinstance(body, dict) else {}
-    except (OSError, URLError, ValueError, UnicodeDecodeError):
-        return {}
+            raw = response.read().decode("utf-8")
+            body_json = json.loads(raw) if raw else {}
+        return {"ok": True, "status": response.status, "body": body_json if isinstance(body_json, dict) else {}}
+    except (OSError, URLError, ValueError, UnicodeDecodeError) as exc:
+        return {"ok": False, "status": None, "body": {}, "detail": str(exc)}
+
+
+def _controller_json(controller: str, path: str, secret: str = "", timeout: float = 3.0) -> Dict[str, Any]:
+    result = _controller_call(controller, path, secret=secret, timeout=timeout)
+    body = result.get("body")
+    return body if isinstance(body, dict) else {}
 
 
 def _mihomo_rules(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -114,6 +126,59 @@ def _mihomo_proxies(body: Dict[str, Any]) -> Dict[str, Any]:
         "groups": groups,
         "nodes": nodes,
         "source": "mihomo /proxies",
+    }
+
+
+def _valid_mihomo_name(value: str) -> bool:
+    return bool(value and len(value) <= 256 and not any(ord(ch) < 32 for ch in value))
+
+
+def select_mihomo_proxy(group: str, node: str) -> Dict[str, Any]:
+    """Select a node only when an explicit mutation opt-in is enabled."""
+    group = str(group or "").strip()
+    node = str(node or "").strip()
+    if not _valid_mihomo_name(group) or not _valid_mihomo_name(node):
+        return {"ok": False, "status": "invalid-input", "detail": "代理组或节点名称无效"}
+    if not MIHOMO_MUTATIONS_ENABLED:
+        return {"ok": False, "status": "read-only", "detail": "项目当前保持 Mihomo 只读；未启用配置变更"}
+    controller = os.getenv("HOMENAS_MIHOMO_CONTROLLER", "").strip().rstrip("/")
+    secret = os.getenv("HOMENAS_MIHOMO_SECRET", "")
+    if not controller or not EXTERNAL_PROBES:
+        return {"ok": False, "status": "unavailable", "detail": "Controller 外部探测未启用或未配置"}
+    result = _controller_call(controller, "/proxies/" + quote(group, safe=""), secret=secret, method="PUT", payload={"name": node})
+    if not result.get("ok"):
+        return {"ok": False, "status": "controller-error", "detail": "Controller 节点切换失败"}
+    return {"ok": True, "status": "selected", "group": group, "node": node, "detail": "节点切换请求已发送"}
+
+
+def mihomo_rule_draft(rules: Any) -> Dict[str, Any]:
+    """Validate a rule draft without writing any Mihomo configuration."""
+    if isinstance(rules, str):
+        values = rules.splitlines()
+    elif isinstance(rules, list):
+        values = [str(item) for item in rules]
+    else:
+        values = []
+    clean: List[str] = []
+    errors: List[str] = []
+    for index, raw in enumerate(values, start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        if len(line) > 1024 or "\r" in line or "\n" in line:
+            errors.append(f"第 {index} 行长度或字符无效")
+            continue
+        if not line.startswith("#") and len(line.split(",")) < 2:
+            errors.append(f"第 {index} 行不是可识别的 Mihomo 规则格式")
+            continue
+        clean.append(line)
+    return {
+        "ok": not errors and bool(clean),
+        "rules": clean,
+        "count": len(clean),
+        "errors": errors,
+        "apply_enabled": False,
+        "detail": "规则草稿仅在 HomeNAS 本地校验，当前不会写入 Mihomo 配置。",
     }
 
 
@@ -226,6 +291,8 @@ def collect_mihomo() -> Dict[str, Any]:
         "rules": {"available": False, "count": 0, "rules": [], "reason": "Controller 未连接"},
         "proxies": {"available": False, "count": 0, "group_count": 0, "groups": [], "nodes": [], "reason": "Controller 未连接"},
         "detail": "Secret 仅在服务器环境变量中使用；浏览器不会收到 Secret。",
+        "mutation_enabled": MIHOMO_MUTATIONS_ENABLED,
+        "mutation_detail": "节点切换需要显式启用 HOMENAS_ENABLE_MIHOMO_MUTATIONS；规则编辑当前仅支持本地草稿。",
     }
     if not controller or not EXTERNAL_PROBES:
         result["reason"] = "Controller 外部探测未启用或未配置"
