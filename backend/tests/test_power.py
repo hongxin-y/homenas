@@ -1,4 +1,7 @@
 import json
+import socket
+import threading
+import time
 
 from homenas.db import Database
 from homenas.power import PerfRAPLCollector, parse_perf_record
@@ -34,6 +37,38 @@ def test_permission_error_is_unavailable_and_never_zero():
     assert result["available"] is False
     assert result["package_watts"] is None
     assert result["collector_status"] == "permission_denied"
+
+
+def test_collector_reads_long_lived_helper_socket(tmp_path, monkeypatch):
+    if not hasattr(socket, "AF_UNIX"):
+        return
+    socket_path = tmp_path / "perf.sock"
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(socket_path))
+    server.listen(1)
+
+    def serve_once():
+        connection, _ = server.accept()
+        with connection:
+            connection.sendall(
+                b"1.000000;14.42;Joules;power/energy-pkg/;100\n"
+                b"2.000000;15.00;Joules;power/energy-pkg/;100\n"
+            )
+        server.close()
+
+    thread = threading.Thread(target=serve_once, daemon=True)
+    thread.start()
+    monkeypatch.setenv("HOMENAS_PERF_SOCKET", str(socket_path))
+    collector = PerfRAPLCollector(restart_delay=0.01)
+    collector.ensure_running()
+    deadline = time.time() + 1.0
+    while time.time() < deadline and not collector.drain_samples():
+        time.sleep(0.01)
+    snapshot = collector.snapshot()
+    collector.stop()
+    thread.join(timeout=1)
+    assert snapshot["package_watts"] == 15.0
+    assert round(snapshot["package_energy_j"], 2) == 29.42
 
 
 def test_energy_records_persist_and_daily_summary(tmp_path):

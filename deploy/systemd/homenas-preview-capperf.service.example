@@ -1,7 +1,9 @@
 [Unit]
-Description=HomeNAS isolated preview with CAP_PERFMON
+Description=HomeNAS isolated preview with privileged perf helper
 After=network-online.target
 Wants=network-online.target
+Requires=homenas-perf-helper.service
+After=homenas-perf-helper.service
 
 [Service]
 Type=simple
@@ -14,6 +16,7 @@ Environment=HOMENAS_PORT=8787
 Environment=HOMENAS_RUNTIME_DIR=/home/hongxin/homenas-preview/runtime
 Environment=HOMENAS_ENABLE_EXTERNAL_PROBES=1
 Environment=HOMENAS_ENABLE_PERF_RAPL=1
+Environment=HOMENAS_PERF_SOCKET=/run/homenas-perf/perf.sock
 Environment=HOMENAS_MIHOMO_CONTROLLER=http://127.0.0.1:9090
 Environment=HOMENAS_ADMIN_PASSWORD=replace-with-a-long-local-admin-password
 ExecStart=/usr/bin/python3 -m homenas.standalone
@@ -24,8 +27,6 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/home/hongxin/homenas-preview/runtime
-CapabilityBoundingSet=CAP_PERFMON
-AmbientCapabilities=CAP_PERFMON
 UMask=0077
 
 [Install]

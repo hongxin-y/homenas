@@ -13,6 +13,7 @@ import queue
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import threading
 import time
@@ -87,7 +88,9 @@ class PerfRAPLCollector:
         self.enabled = os.getenv("HOMENAS_ENABLE_PERF_RAPL", "1") == "1" and os.name == "posix"
         self.perf_path = shutil.which("perf")
         self.sleep_path = shutil.which("sleep") or "/bin/sleep"
+        self.helper_socket = os.getenv("HOMENAS_PERF_SOCKET", "").strip() or None
         self._process: Optional[subprocess.Popen[str]] = None
+        self._socket: Optional[socket.socket] = None
         self._reader: Optional[threading.Thread] = None
         self._lock = threading.RLock()
         self._queue: "queue.Queue[Dict[str, Any]]" = queue.Queue()
@@ -114,11 +117,13 @@ class PerfRAPLCollector:
         with self._lock:
             if self._stopping or not self.enabled:
                 return
-            if not self.perf_path:
+            if not self.perf_path and not self.helper_socket:
                 self.status = "unavailable"
                 self.last_error = "perf binary not found"
                 return
             if self._process is not None and self._process.poll() is None:
+                return
+            if self._socket is not None:
                 return
             if time.monotonic() < self._next_restart:
                 return
@@ -127,6 +132,9 @@ class PerfRAPLCollector:
     def _start_locked(self) -> None:
         self._previous_timestamp.clear()
         self._latest.clear()
+        if self.helper_socket:
+            self._start_helper_locked()
+            return
         env = os.environ.copy()
         env["LC_ALL"] = "C"
         env["LANG"] = "C"
@@ -154,6 +162,59 @@ class PerfRAPLCollector:
         self.status = "starting"
         self._reader = threading.Thread(target=self._read_stderr, args=(process,), name="homenas-perf-rapl", daemon=True)
         self._reader.start()
+
+    def _start_helper_locked(self) -> None:
+        helper_socket = self.helper_socket
+        if not helper_socket:
+            return
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(5.0)
+            sock.connect(helper_socket)
+            sock.settimeout(None)
+        except OSError as exc:
+            sock.close()
+            self._socket = None
+            self.status = "error"
+            self.last_error = f"perf helper unavailable: {exc}"
+            self._next_restart = time.monotonic() + self._backoff
+            self._backoff = min(max(self._backoff * 2, self.restart_delay), 60.0)
+            return
+        self._socket = sock
+        self.status = "starting"
+        self._reader = threading.Thread(target=self._read_socket, args=(sock,), name="homenas-perf-helper", daemon=True)
+        self._reader.start()
+
+    def _read_socket(self, sock: socket.socket) -> None:
+        stream = None
+        try:
+            stream = sock.makefile("r", encoding="utf-8", errors="replace", newline="")
+            for line in stream:
+                self._handle_line(line)
+        except OSError as exc:
+            with self._lock:
+                if self._socket is sock and not self._stopping and self.status != "permission_denied":
+                    self.last_error = f"perf helper connection failed: {exc}"
+        finally:
+            if stream is not None:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+            with self._lock:
+                if self._socket is not sock:
+                    return
+                self._socket = None
+                if self._stopping:
+                    self.status = "stopped"
+                    return
+                if self.status != "permission_denied":
+                    self.status = "exited"
+                    if not self.last_error:
+                        self.last_error = "perf helper disconnected"
+                retry_delay = 60.0 if self.status == "permission_denied" else self._backoff
+                self._next_restart = time.monotonic() + retry_delay
+                self._backoff = min(max(self._backoff * 2, self.restart_delay), 60.0)
 
     def _read_stderr(self, process: subprocess.Popen[str]) -> None:
         try:
@@ -290,7 +351,9 @@ class PerfRAPLCollector:
         with self._lock:
             self._stopping = True
             process = self._process
+            helper_socket = self._socket
             self._process = None
+            self._socket = None
         if process is not None and process.poll() is None:
             try:
                 if os.name == "posix":
@@ -303,6 +366,15 @@ class PerfRAPLCollector:
                     process.kill()
                 except OSError:
                     pass
+        if helper_socket is not None:
+            try:
+                helper_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                helper_socket.close()
+            except OSError:
+                pass
         reader = self._reader
         if reader is not None and reader.is_alive():
             reader.join(timeout=3)

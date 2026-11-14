@@ -1,0 +1,27 @@
+[Unit]
+Description=HomeNAS privileged perf RAPL helper
+After=local-fs.target
+Before=homenas-preview-capperf.service
+
+[Service]
+Type=simple
+User=root
+Group=hongxin
+RuntimeDirectory=homenas-perf
+RuntimeDirectoryMode=0750
+Environment=HOMENAS_PERF_SOCKET=/run/homenas-perf/perf.sock
+ExecStart=/usr/bin/python3 /usr/local/libexec/homenas-perf-helper.py
+Restart=always
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/homenas-perf
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_SYS_ADMIN
+AmbientCapabilities=CAP_SYS_ADMIN
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
