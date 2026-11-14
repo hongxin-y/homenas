@@ -105,7 +105,11 @@ def _mihomo_proxies(body: Dict[str, Any]) -> Dict[str, Any]:
                 "type": kind,
                 "now": raw.get("now"),
                 "node_count": len(all_nodes),
-                "nodes": all_nodes[:40],
+                # Keep enough names for a human to inspect a large regional
+                # group in the dashboard; this remains metadata-only and
+                # does not expose controller credentials.
+                "nodes": all_nodes[:200],
+                "nodes_truncated": len(all_nodes) > 200,
             })
         else:
             history = raw.get("history") if isinstance(raw.get("history"), list) else []
