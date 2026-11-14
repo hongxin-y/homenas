@@ -84,6 +84,8 @@ def test_energy_records_persist_and_daily_summary(tmp_path):
     assert summary["available"] is True
     assert round(summary["domains"]["package"]["joules"], 2) == 33.17
     assert round(summary["domains"]["package"]["wh"], 5) == round(33.17 / 3600, 5)
+    assert summary["total_domain"] == "package"
+    assert round(summary["total_joules"], 2) == 33.17
     assert "gpu" not in summary["domains"]
     db.close()
 

@@ -190,7 +190,12 @@ class Database:
             self.conn.commit()
 
     def energy_summary(self, day: Optional[str] = None) -> Dict[str, Any]:
-        """Return local-calendar-day energy totals in J, Wh and kWh."""
+        """Return per-domain energy and Package-only daily totals.
+
+        RAPL domains are separate measurements.  The legacy ``total_*`` keys
+        therefore refer to the CPU Package domain only; they must never sum
+        Package, Cores, GPU, DRAM and PSys into an outlet-power estimate.
+        """
         requested_day = day or datetime.now().astimezone().date().isoformat()
         with self._lock:
             rows = self.conn.execute(
@@ -210,15 +215,17 @@ class Database:
                 "peak_watts": float(row["peak_watts"]) if row["peak_watts"] is not None else None,
                 "samples": int(row["samples"]),
             }
-        total_joules = sum(item["joules"] for item in domains.values()) if domains else None
+        package = domains.get("package")
+        package_joules = package["joules"] if package is not None else None
         return {
             "available": bool(domains),
             "day": requested_day,
             "domains": domains,
-            "total_joules": total_joules,
-            "total_wh": total_joules / 3600.0 if total_joules is not None else None,
-            "total_kwh": total_joules / 3600000.0 if total_joules is not None else None,
-            "semantics": "仅累计有效 perf/RAPL 区间；各 domain 不应相加解释为插座功耗。",
+            "total_domain": "package" if package is not None else None,
+            "total_joules": package_joules,
+            "total_wh": package_joules / 3600.0 if package_joules is not None else None,
+            "total_kwh": package_joules / 3600000.0 if package_joules is not None else None,
+            "semantics": "total_* 仅代表 Package；其他 domain 分开累计，不能相加解释为插座功耗。",
         }
 
     def recent_metrics(self, metric: str, limit: int = 60) -> List[Dict[str, Any]]:
