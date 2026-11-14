@@ -42,7 +42,7 @@ def normalize_domain(event: str) -> Optional[str]:
     if not match:
         return None
     token = match.group(1).lower()
-    return {"pkg": "package", "package": "package", "core": "cores", "dram": "dram"}.get(token, token)
+    return {"pkg": "package", "package": "package", "core": "cores", "ram": "dram", "dram": "dram"}.get(token, token)
 
 
 def parse_perf_record(line: str) -> Optional[Dict[str, Any]]:

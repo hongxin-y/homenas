@@ -12,6 +12,7 @@ def test_parse_perf_semicolon_record_and_domain_aliases():
     assert record["available"] is True
     assert record["domain"] == "package"
     assert record["joules"] == 14.42
+    assert parse_perf_record("1.000992124;0.60;Joules;power/energy-ram/;100.00")["domain"] == "dram"
     assert parse_perf_record("1.000992124;<not supported>;Joules;power/energy-gpu/;100.00")["available"] is False
     assert parse_perf_record("diagnostic line") is None
 
