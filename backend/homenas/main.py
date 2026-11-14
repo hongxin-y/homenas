@@ -14,7 +14,7 @@ from .auth import AuthManager
 from .collector import Collector
 from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, ELECTRICITY_TARIFF_TIER, FRONTEND_DIR, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
-from .integrations import mihomo_rule_draft, ping_target, select_mihomo_proxy
+from .integrations import mihomo_rule_draft, mihomo_rule_toggle, ping_target, select_mihomo_proxy
 from .power_cost import parse_period, period_cost, shanghai_tariff
 
 
@@ -34,6 +34,11 @@ class MihomoSelectRequest(BaseModel):
 
 class MihomoRuleDraftRequest(BaseModel):
     rules: list[str] = Field(default_factory=list, max_length=500)
+
+
+class MihomoRuleToggleRequest(BaseModel):
+    index: int = Field(ge=0, le=100000)
+    disabled: bool
 
 
 def _bearer(authorization: Optional[str]) -> Optional[str]:
@@ -191,6 +196,16 @@ async def mihomo_select(payload: MihomoSelectRequest, request: Request, user: st
 async def mihomo_rules_draft(payload: MihomoRuleDraftRequest, request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
     result = mihomo_rule_draft(payload.rules)
     request.app.state.db.audit(user, "mihomo.rules_draft", {"count": result.get("count"), "ok": result.get("ok")})
+    return result
+
+
+@app.post("/api/vpn/mihomo/rules/toggle")
+async def mihomo_rules_toggle(payload: MihomoRuleToggleRequest, request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
+    result = await asyncio.to_thread(mihomo_rule_toggle, payload.index, payload.disabled)
+    request.app.state.db.audit(user, "mihomo.rules_toggle", {"index": payload.index, "disabled": payload.disabled, "status": result.get("status")})
+    if not result.get("ok"):
+        status = 403 if result.get("status") == "read-only" else 400
+        raise HTTPException(status_code=status, detail=result.get("detail") or "规则开关失败")
     return result
 
 

@@ -20,7 +20,7 @@ from .auth import AuthManager
 from .collector import Collector
 from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, ELECTRICITY_TARIFF_TIER, FRONTEND_DIR, HOST, PORT, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
-from .integrations import mihomo_rule_draft, ping_target, select_mihomo_proxy
+from .integrations import mihomo_rule_draft, mihomo_rule_toggle, ping_target, select_mihomo_proxy
 from .power_cost import parse_period, period_cost, shanghai_tariff
 
 
@@ -155,6 +155,15 @@ class Handler(BaseHTTPRequestHandler):
             result = mihomo_rule_draft(body.get("rules", []))
             self.app_runtime.db.audit(self.token_user() or "admin", "mihomo.rules_draft", {"count": result.get("count"), "ok": result.get("ok")})
             self.write_json(result)
+            return
+        if path == "/api/vpn/mihomo/rules/toggle":
+            if not self.require_user():
+                return
+            body = self.json_body()
+            result = mihomo_rule_toggle(body.get("index"), body.get("disabled"))
+            self.app_runtime.db.audit(self.token_user() or "admin", "mihomo.rules_toggle", {"index": body.get("index"), "disabled": body.get("disabled"), "status": result.get("status")})
+            status = 200 if result.get("ok") else (403 if result.get("status") == "read-only" else 400)
+            self.write_json(result, status)
             return
         self.write_json({"detail": "Not found"}, 404)
 

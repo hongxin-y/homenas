@@ -149,10 +149,62 @@ def select_mihomo_proxy(group: str, node: str) -> Dict[str, Any]:
     secret = os.getenv("HOMENAS_MIHOMO_SECRET", "")
     if not controller or not EXTERNAL_PROBES:
         return {"ok": False, "status": "unavailable", "detail": "Controller 外部探测未启用或未配置"}
+    current = _controller_call(controller, "/proxies/" + quote(group, safe=""), secret=secret)
+    current_body = current.get("body") if isinstance(current.get("body"), dict) else {}
+    available_nodes = current_body.get("all") if isinstance(current_body.get("all"), list) else []
+    if not current.get("ok") or not current_body:
+        return {"ok": False, "status": "controller-error", "detail": "无法读取代理组当前状态"}
+    if available_nodes and node not in available_nodes:
+        return {"ok": False, "status": "invalid-node", "detail": "所选节点不属于该代理组"}
+    previous = current_body.get("now")
     result = _controller_call(controller, "/proxies/" + quote(group, safe=""), secret=secret, method="PUT", payload={"name": node})
     if not result.get("ok"):
         return {"ok": False, "status": "controller-error", "detail": "Controller 节点切换失败"}
-    return {"ok": True, "status": "selected", "group": group, "node": node, "detail": "节点切换请求已发送"}
+    return {"ok": True, "status": "selected", "group": group, "node": node, "previous": previous, "detail": "节点切换请求已发送"}
+
+
+def mihomo_rule_toggle(index: Any, disabled: Any) -> Dict[str, Any]:
+    """Enable or disable one loaded rule through Mihomo's runtime API.
+
+    Mihomo exposes PATCH /rules/disable for this operation. It is deliberately
+    described as a runtime toggle: the upstream API resets it after a kernel
+    restart, while persistent rule-text editing belongs to the profile/config
+    manager rather than the controller.
+    """
+    try:
+        rule_index = int(index)
+    except (TypeError, ValueError):
+        return {"ok": False, "status": "invalid-input", "detail": "规则索引无效"}
+    if rule_index < 0 or rule_index > 100000:
+        return {"ok": False, "status": "invalid-input", "detail": "规则索引超出范围"}
+    disabled_value = bool(disabled)
+    if not MIHOMO_MUTATIONS_ENABLED:
+        return {"ok": False, "status": "read-only", "detail": "项目当前保持 Mihomo 只读；未启用配置变更"}
+    controller = os.getenv("HOMENAS_MIHOMO_CONTROLLER", "").strip().rstrip("/")
+    secret = os.getenv("HOMENAS_MIHOMO_SECRET", "")
+    if not controller or not EXTERNAL_PROBES:
+        return {"ok": False, "status": "unavailable", "detail": "Controller 外部探测未启用或未配置"}
+    current = _controller_json(controller, "/rules", secret)
+    rows = current.get("rules") if isinstance(current.get("rules"), list) else []
+    if not any(isinstance(row, dict) and row.get("index") == rule_index for row in rows):
+        return {"ok": False, "status": "invalid-index", "detail": "当前规则列表中不存在该索引"}
+    result = _controller_call(
+        controller,
+        "/rules/disable",
+        secret=secret,
+        method="PATCH",
+        payload={str(rule_index): disabled_value},
+    )
+    if not result.get("ok"):
+        return {"ok": False, "status": "controller-error", "detail": "Controller 规则开关失败"}
+    return {
+        "ok": True,
+        "status": "updated",
+        "index": rule_index,
+        "disabled": disabled_value,
+        "persistent": False,
+        "detail": "运行时规则状态已更新；Mihomo 重启后会恢复配置文件状态",
+    }
 
 
 def mihomo_rule_draft(rules: Any) -> Dict[str, Any]:
@@ -296,7 +348,7 @@ def collect_mihomo() -> Dict[str, Any]:
         "proxies": {"available": False, "count": 0, "group_count": 0, "groups": [], "nodes": [], "reason": "Controller 未连接"},
         "detail": "Secret 仅在服务器环境变量中使用；浏览器不会收到 Secret。",
         "mutation_enabled": MIHOMO_MUTATIONS_ENABLED,
-        "mutation_detail": "节点切换需要显式启用 HOMENAS_ENABLE_MIHOMO_MUTATIONS；规则编辑当前仅支持本地草稿。",
+        "mutation_detail": "节点切换与规则运行时启停需要显式启用 HOMENAS_ENABLE_MIHOMO_MUTATIONS；Mihomo Controller 不提供规则文本持久化写回。",
     }
     if not controller or not EXTERNAL_PROBES:
         result["reason"] = "Controller 外部探测未启用或未配置"

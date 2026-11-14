@@ -79,6 +79,12 @@ def main():
             request = urllib.request.Request(base + "/api/vpn/mihomo/rules/draft", data=json.dumps({"rules": ["DOMAIN-SUFFIX,example.com,Proxy"]}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
             with opener.open(request) as response:
                 assert_true(json.loads(response.read())["ok"] is True, "mihomo rule draft endpoint")
+            request = urllib.request.Request(base + "/api/vpn/mihomo/rules/toggle", data=json.dumps({"index": 0, "disabled": True}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                opener.open(request)
+                raise AssertionError("read-only Mihomo rule toggle should be blocked")
+            except urllib.error.HTTPError as error:
+                assert_true(error.code == 403, "read-only Mihomo rule toggle guard")
             request = urllib.request.Request(base + "/api/vpn/mihomo/select", data=json.dumps({"group": "Proxy", "node": "Node"}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
             try:
                 opener.open(request)
