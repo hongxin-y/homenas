@@ -1,7 +1,8 @@
 """Dependency-free local server used when FastAPI is not installed.
 
-It intentionally exposes the same small read-only surface as the FastAPI app,
-so the dashboard can be smoke-tested offline on a clean Windows workstation.
+It exposes the same small dashboard surface as the FastAPI app, including the
+server-side gated Mihomo mutation endpoints, so the dashboard can be
+smoke-tested offline on a clean Windows workstation.
 Production/NAS deployment should use ``homenas.main:app`` with FastAPI.
 """
 
@@ -20,7 +21,7 @@ from .auth import AuthManager
 from .collector import Collector
 from .config import ADMIN_PASSWORD, DB_PATH, ELECTRICITY_PRICE_CNY_PER_KWH, ELECTRICITY_TARIFF_TIER, FRONTEND_DIR, HOST, PORT, SESSION_TTL_SECONDS, ensure_runtime_dir
 from .db import Database
-from .integrations import mihomo_rule_draft, mihomo_rule_toggle, ping_target, select_mihomo_proxy
+from .integrations import mihomo_rule_draft, mihomo_rule_toggle, mihomo_rules_apply, ping_target, select_mihomo_proxy
 from .power_cost import parse_period, period_cost, shanghai_tariff
 
 
@@ -155,6 +156,15 @@ class Handler(BaseHTTPRequestHandler):
             result = mihomo_rule_draft(body.get("rules", []))
             self.app_runtime.db.audit(self.token_user() or "admin", "mihomo.rules_draft", {"count": result.get("count"), "ok": result.get("ok")})
             self.write_json(result)
+            return
+        if path == "/api/vpn/mihomo/rules/apply":
+            if not self.require_user():
+                return
+            body = self.json_body()
+            result = mihomo_rules_apply(body.get("rules", []))
+            self.app_runtime.db.audit(self.token_user() or "admin", "mihomo.rules_apply", {"count": result.get("count"), "status": result.get("status")})
+            status = 200 if result.get("ok") else (403 if result.get("status") == "read-only" else 400)
+            self.write_json(result, status)
             return
         if path == "/api/vpn/mihomo/rules/toggle":
             if not self.require_user():

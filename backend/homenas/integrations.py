@@ -1,5 +1,7 @@
-"""Fixed, read-only integrations for optional NAS services.
+"""Fixed integrations for optional NAS services.
 
+Host probes remain read-only. Mihomo mutations are separately opt-in, use fixed
+server-side configuration, and never accept a path or secret from the browser.
 Every command here is an explicit argv list with a short timeout. There is no
 shell interpolation and no endpoint supplied by the browser. External probes
 are opt-in with ``HOMENAS_ENABLE_EXTERNAL_PROBES=1`` so local development never
@@ -13,7 +15,12 @@ import os
 import ipaddress
 import re
 import shutil
+import socket
+import stat
 import subprocess
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import quote
 from urllib.error import URLError
@@ -22,6 +29,8 @@ from urllib.request import Request, urlopen
 
 EXTERNAL_PROBES = os.getenv("HOMENAS_ENABLE_EXTERNAL_PROBES", "0") == "1"
 MIHOMO_MUTATIONS_ENABLED = os.getenv("HOMENAS_ENABLE_MIHOMO_MUTATIONS", "0") == "1"
+MIHOMO_CONFIG_PATH = os.getenv("HOMENAS_MIHOMO_CONFIG_PATH", "").strip()
+MIHOMO_HELPER_SOCKET = os.getenv("HOMENAS_MIHOMO_HELPER_SOCKET", "").strip()
 
 
 def fixed_command(argv: Sequence[str], timeout: float = 3.0) -> Dict[str, Any]:
@@ -209,6 +218,19 @@ def mihomo_rule_toggle(index: Any, disabled: Any) -> Dict[str, Any]:
 
 def mihomo_rule_draft(rules: Any) -> Dict[str, Any]:
     """Validate a rule draft without writing any Mihomo configuration."""
+    clean, errors = _normalize_mihomo_rules(rules)
+    return {
+        "ok": not errors and bool(clean),
+        "rules": clean,
+        "count": len(clean),
+        "errors": errors,
+        "apply_enabled": mihomo_persistent_edit_status()["enabled"],
+        "detail": "规则草稿已通过本地校验；可用时可写入指定 Mihomo 配置并请求 reload。",
+    }
+
+
+def _normalize_mihomo_rules(rules: Any) -> tuple[List[str], List[str]]:
+    """Normalize browser-supplied rule lines without allowing multiline injection."""
     if isinstance(rules, str):
         values = rules.splitlines()
     elif isinstance(rules, list):
@@ -228,14 +250,147 @@ def mihomo_rule_draft(rules: Any) -> Dict[str, Any]:
             errors.append(f"第 {index} 行不是可识别的 Mihomo 规则格式")
             continue
         clean.append(line)
-    return {
-        "ok": not errors and bool(clean),
-        "rules": clean,
-        "count": len(clean),
-        "errors": errors,
-        "apply_enabled": False,
-        "detail": "规则草稿仅在 HomeNAS 本地校验，当前不会写入 Mihomo 配置。",
-    }
+    return clean, errors
+
+
+def _mihomo_config_file() -> Optional[Path]:
+    if not MIHOMO_CONFIG_PATH:
+        return None
+    try:
+        path = Path(MIHOMO_CONFIG_PATH).expanduser()
+    except (OSError, ValueError):
+        return None
+    if not path.is_absolute() or path.is_symlink() or not path.is_file():
+        return None
+    return path
+
+
+def mihomo_persistent_edit_status() -> Dict[str, Any]:
+    """Return a browser-safe capability summary for persistent Mihomo edits."""
+    path = _mihomo_config_file()
+    if not MIHOMO_MUTATIONS_ENABLED:
+        return {"enabled": False, "reason": "HOMENAS_ENABLE_MIHOMO_MUTATIONS 未启用"}
+    if not EXTERNAL_PROBES:
+        return {"enabled": False, "reason": "外部服务探测未启用"}
+    if MIHOMO_HELPER_SOCKET:
+        try:
+            helper_stat = os.lstat(MIHOMO_HELPER_SOCKET)
+        except OSError:
+            return {"enabled": False, "reason": "Mihomo root helper socket 不可用"}
+        if stat.S_ISLNK(helper_stat.st_mode) or not stat.S_ISSOCK(helper_stat.st_mode):
+            return {"enabled": False, "reason": "Mihomo root helper socket 不可用"}
+        return {"enabled": True, "reason": "由受限 root helper 备份、写回并 reload Mihomo"}
+    if not path:
+        return {"enabled": False, "reason": "未配置可写的 HOMENAS_MIHOMO_CONFIG_PATH"}
+    if not os.access(path, os.W_OK):
+        return {"enabled": False, "reason": "HomeNAS 运行用户没有 Mihomo 配置文件写权限"}
+    return {"enabled": True, "reason": "规则可写入配置文件并请求 Mihomo reload"}
+
+
+def _replace_top_level_rules(text: str, rules: List[str]) -> str:
+    """Replace only the top-level YAML rules list while preserving other keys."""
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if re.match(r"^rules\s*:", line)), None)
+    replacement = ["rules:"] + [f"  - {json.dumps(rule, ensure_ascii=False)}" for rule in rules]
+    if start is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend(replacement)
+    elif not re.match(r"^rules\s*:\s*(?:#.*)?$", lines[start]):
+        # Also handle a compact `rules: []` form without creating a duplicate
+        # YAML key. Nested/indented rules are deliberately not considered.
+        lines[start:start + 1] = replacement
+    else:
+        end = start + 1
+        while end < len(lines):
+            line = lines[end]
+            if re.match(r"^[^\s#][^:]*\s*:", line):
+                break
+            end += 1
+        lines[start:end] = replacement
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _atomic_write(path: Path, content: bytes, mode: int) -> None:
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.homenas-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _mihomo_helper_call(rules: List[str]) -> Dict[str, Any]:
+    """Ask the fixed root helper to apply rules without exposing a path or secret."""
+    if not MIHOMO_HELPER_SOCKET:
+        return {"ok": False, "status": "unavailable", "detail": "Mihomo helper 未配置"}
+    request = json.dumps({"action": "apply_rules", "rules": rules}, ensure_ascii=False).encode("utf-8") + b"\n"
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
+            channel.settimeout(8.0)
+            channel.connect(MIHOMO_HELPER_SOCKET)
+            channel.sendall(request)
+            chunks: List[bytes] = []
+            while True:
+                chunk = channel.recv(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if b"\n" in chunk:
+                    break
+        raw = b"".join(chunks).split(b"\n", 1)[0]
+        result = json.loads(raw.decode("utf-8"))
+        return result if isinstance(result, dict) else {"ok": False, "status": "helper-error", "detail": "helper 返回格式无效"}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return {"ok": False, "status": "helper-unavailable", "detail": f"Mihomo root helper 不可用：{exc}"}
+
+
+def mihomo_rules_apply(rules: Any) -> Dict[str, Any]:
+    """Persist validated rules, back up the old file, then request Mihomo reload."""
+    clean, errors = _normalize_mihomo_rules(rules)
+    if errors or not clean:
+        return {"ok": False, "status": "invalid-rules", "errors": errors or ["至少需要一条规则"], "detail": "规则未写入"}
+    capability = mihomo_persistent_edit_status()
+    if not capability["enabled"]:
+        return {"ok": False, "status": "read-only", "detail": capability["reason"]}
+    if MIHOMO_HELPER_SOCKET:
+        return _mihomo_helper_call(clean)
+    controller = os.getenv("HOMENAS_MIHOMO_CONTROLLER", "").strip().rstrip("/")
+    secret = os.getenv("HOMENAS_MIHOMO_SECRET", "")
+    path = _mihomo_config_file()
+    if not controller or not path:
+        return {"ok": False, "status": "unavailable", "detail": "Mihomo Controller 或配置文件不可用"}
+    try:
+        original = path.read_bytes()
+        mode = stat.S_IMODE(path.stat().st_mode)
+        runtime_dir = Path(os.getenv("HOMENAS_RUNTIME_DIR", "runtime"))
+        backup_dir = runtime_dir / "mihomo-backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup = backup_dir / f"{path.name}.{stamp}.bak"
+        backup.write_bytes(original)
+        os.chmod(backup, 0o600)
+        updated = _replace_top_level_rules(original.decode("utf-8"), clean).encode("utf-8")
+        _atomic_write(path, updated, mode)
+    except (OSError, UnicodeDecodeError) as exc:
+        return {"ok": False, "status": "write-failed", "detail": f"配置文件写入失败：{exc}"}
+
+    # The Controller reload endpoint uses force=true as a query parameter.
+    # The file was already written by HomeNAS, so keep the request path empty;
+    # this avoids passing an arbitrary filesystem path through the Controller.
+    reload_result = _controller_call(controller, "/configs?force=true", secret=secret, method="PUT", payload={"path": "", "payload": ""})
+    if not reload_result.get("ok"):
+        try:
+            _atomic_write(path, original, mode)
+        except OSError:
+            return {"ok": False, "status": "rollback-failed", "detail": "Mihomo reload 失败，且配置文件自动回滚失败", "backup": backup.name}
+        return {"ok": False, "status": "reload-failed", "detail": "Mihomo reload 失败，配置文件已自动回滚", "backup": backup.name}
+    return {"ok": True, "status": "applied", "count": len(clean), "backup": backup.name, "persistent": True, "detail": f"已写入 {len(clean)} 条规则并请求 Mihomo reload"}
 
 
 def _valid_ping_target(target: str) -> bool:
@@ -337,6 +492,7 @@ def collect_mihomo() -> Dict[str, Any]:
     path = shutil.which("mihomo") or shutil.which("clash")
     controller = os.getenv("HOMENAS_MIHOMO_CONTROLLER", "").strip().rstrip("/")
     secret = os.getenv("HOMENAS_MIHOMO_SECRET", "")
+    persistent_status = mihomo_persistent_edit_status()
     result: Dict[str, Any] = {
         "available": bool(path),
         "path": path,
@@ -348,7 +504,9 @@ def collect_mihomo() -> Dict[str, Any]:
         "proxies": {"available": False, "count": 0, "group_count": 0, "groups": [], "nodes": [], "reason": "Controller 未连接"},
         "detail": "Secret 仅在服务器环境变量中使用；浏览器不会收到 Secret。",
         "mutation_enabled": MIHOMO_MUTATIONS_ENABLED,
-        "mutation_detail": "节点切换与规则运行时启停需要显式启用 HOMENAS_ENABLE_MIHOMO_MUTATIONS；Mihomo Controller 不提供规则文本持久化写回。",
+        "persistent_edit_enabled": persistent_status["enabled"],
+        "persistent_edit_detail": persistent_status["reason"],
+        "mutation_detail": "节点切换与规则运行时启停需要显式启用 HOMENAS_ENABLE_MIHOMO_MUTATIONS；规则持久化写回需要可写配置文件或受限 root helper socket。",
     }
     if not controller or not EXTERNAL_PROBES:
         result["reason"] = "Controller 外部探测未启用或未配置"

@@ -8,6 +8,8 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 
 DEFAULT_PRICE_CNY_PER_KWH = 0.60
 HOURS_PER_YEAR = 24.0 * 365.0
+SECONDS_PER_DAY = 24.0 * 60.0 * 60.0
+MIN_ANNUALIZATION_SECONDS = 5.0 * 60.0
 SHANGHAI_TARIFF = {
     "id": "shanghai_residential_time_of_use",
     "name": "上海市居民一户一表分时电价",
@@ -124,6 +126,84 @@ def _package_energy(summary: Dict[str, Any]) -> Optional[float]:
     return float(package["kwh"])
 
 
+def _parse_timestamp(value: Any) -> Optional[datetime]:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _rolling_package_stats(
+    records: Iterable[Tuple[str, float, Optional[float]]],
+    tariff: Optional[Dict[str, Any]],
+    now: Optional[datetime] = None,
+    window_hours: float = 24.0,
+) -> Optional[Dict[str, Any]]:
+    """Summarize valid Package intervals in a rolling window.
+
+    ``energy_records`` stores interval Joules and Watts.  Joules / Watts
+    recovers the measured interval duration, so annualization uses actual
+    sampled time instead of treating a partial calendar day as a full day.
+    """
+    end = now.astimezone(timezone.utc) if now is not None else datetime.now(timezone.utc)
+    cutoff = end - timedelta(hours=float(window_hours))
+    selected: list[Tuple[str, float, float]] = []
+    for record in records:
+        if len(record) < 2:
+            continue
+        timestamp = _parse_timestamp(record[0])
+        if timestamp is None or timestamp < cutoff or timestamp > end + timedelta(minutes=1):
+            continue
+        try:
+            joules = float(record[1])
+        except (TypeError, ValueError):
+            continue
+        watts: Optional[float] = None
+        if len(record) > 2 and record[2] is not None:
+            try:
+                watts = float(record[2])
+            except (TypeError, ValueError):
+                watts = None
+        if joules < 0:
+            continue
+        interval_seconds = joules / watts if watts is not None and watts > 0 else None
+        if interval_seconds is None or interval_seconds <= 0 or interval_seconds > 60:
+            continue
+        selected.append((timestamp.isoformat(), joules, interval_seconds))
+    if not selected:
+        return None
+    total_joules = sum(item[1] for item in selected)
+    observed_seconds = sum(item[2] for item in selected)
+    if observed_seconds < MIN_ANNUALIZATION_SECONDS:
+        return None
+    records_for_cost = [(item[0], item[1]) for item in selected]
+    tariff_result = _records_cost(records_for_cost, tariff) if tariff is not None else None
+    package_kwh = total_joules / 3600000.0
+    if tariff_result is not None and tariff_result["package_kwh"] is not None:
+        observed_cost = float(tariff_result["package_cost_cny"])
+    else:
+        observed_cost = None
+    observed_hours = observed_seconds / 3600.0
+    annual_kwh = package_kwh * HOURS_PER_YEAR / observed_hours
+    annual_cost = observed_cost * (HOURS_PER_YEAR * 3600.0) / observed_seconds if observed_cost is not None else None
+    return {
+        "package_kwh": annual_kwh,
+        "cny": annual_cost,
+        "average_watts": total_joules / observed_seconds,
+        "window_hours": float(window_hours),
+        "observed_hours": observed_hours,
+        "coverage_ratio": min(1.0, observed_seconds / (window_hours * 3600.0)),
+        "sample_count": len(selected),
+        "window_start": selected[0][0],
+        "window_end": selected[-1][0],
+        "observed_package_kwh": package_kwh,
+        "observed_cost_cny": observed_cost,
+    }
+
+
 def period_cost(summary: Dict[str, Any], price_cny_per_kwh: float, start: str, end: str, records: Optional[Iterable[Tuple[str, float]]] = None, tariff: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     price = normalize_price(price_cny_per_kwh)
     package_kwh = _package_energy(summary)
@@ -147,7 +227,13 @@ def period_cost(summary: Dict[str, Any], price_cny_per_kwh: float, start: str, e
     }
 
 
-def current_cost(power: Dict[str, Any], daily: Dict[str, Any], price_cny_per_kwh: float, daily_tariff: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def current_cost(
+    power: Dict[str, Any],
+    daily: Dict[str, Any],
+    price_cny_per_kwh: float,
+    daily_tariff: Optional[Dict[str, Any]] = None,
+    recent_records: Optional[Iterable[Tuple[str, float, Optional[float]]]] = None,
+) -> Dict[str, Any]:
     price = normalize_price(price_cny_per_kwh)
     watts = power.get("package_watts")
     current_available = watts is not None
@@ -159,21 +245,22 @@ def current_cost(power: Dict[str, Any], daily: Dict[str, Any], price_cny_per_kwh
     current_band = tariff_band(datetime.now(timezone.utc), tariff) if tariff is not None else ("flat", "平", price)
     current_rate = current_band[2]
     daily_cost = tariff_result.get("package_cost_cny") if tariff_result is not None else (daily_kwh * price if daily_kwh is not None else None)
-    if daily_kwh is not None:
-        annual_kwh = daily_kwh * 365.0
-        annual_basis = "today_package"
+    rolling = _rolling_package_stats(recent_records or [], tariff) if recent_records is not None else None
+    if rolling is not None:
+        annual_kwh = rolling["package_kwh"]
+        annual_cost = rolling["cny"] if rolling["cny"] is not None else annual_kwh * (current_rate if tariff is not None else price)
+        annual_basis = "rolling_24h"
     elif current_kwh_per_day is not None:
+        # This fallback is only used before enough historical intervals exist.
+        # It is explicitly labeled so it cannot be mistaken for a full-day
+        # measurement from midnight.
         annual_kwh = current_kwh_per_day * 365.0
+        annual_cost = annual_kwh * (current_rate if tariff is not None else price)
         annual_basis = "current_package_watts"
     else:
         annual_kwh = None
-        annual_basis = None
-    if daily_kwh is not None and daily_cost is not None:
-        annual_cost = daily_cost * 365.0
-    elif annual_kwh is not None:
-        annual_cost = annual_kwh * (current_rate if tariff is not None else price)
-    else:
         annual_cost = None
+        annual_basis = None
     return {
         "price_cny_per_kwh": price if tariff is None else None,
         "current_rate_cny_per_kwh": current_rate,
@@ -199,7 +286,16 @@ def current_cost(power: Dict[str, Any], daily: Dict[str, Any], price_cny_per_kwh
             "basis": annual_basis,
             "package_kwh": annual_kwh,
             "cny": annual_cost,
+            "window_hours": rolling.get("window_hours") if rolling is not None else None,
+            "observed_hours": rolling.get("observed_hours") if rolling is not None else None,
+            "coverage_ratio": rolling.get("coverage_ratio") if rolling is not None else None,
+            "average_watts": rolling.get("average_watts") if rolling is not None else current_watts,
+            "sample_count": rolling.get("sample_count") if rolling is not None else None,
+            "window_start": rolling.get("window_start") if rolling is not None else None,
+            "window_end": rolling.get("window_end") if rolling is not None else None,
+            "observed_package_kwh": rolling.get("observed_package_kwh") if rolling is not None else None,
+            "observed_cost_cny": rolling.get("observed_cost_cny") if rolling is not None else None,
         },
         "tariff": tariff,
-        "semantics": "电费只按 CPU Package 能耗估算；不代表整机插座电费。",
+        "semantics": "电费只按 CPU Package 能耗估算；年化优先使用最近 24 小时有效 Package 区间，数据不足时才退回当前功率估算；不代表整机插座电费。",
     }

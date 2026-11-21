@@ -14,7 +14,7 @@ The browser uses the short `/api/*` routes. The read-only aliases under `/api/v1
 
 ## Security
 
-All monitoring routes require the HttpOnly `homenas_session` cookie (Bearer is accepted only for controlled non-browser clients). The browser cannot provide a command, URL, device path or Mihomo Secret. Mihomo integration uses fixed server-side read-only endpoints (`/version`, `/configs`, `/rules`, `/proxies`). Perf RAPL is a long-lived server-side subprocess; its stderr is parsed and only valid intervals are stored. No service-control, arbitrary shell, disk mutation, or configuration-write endpoint exists in this version.
+All monitoring routes require the HttpOnly `homenas_session` cookie (Bearer is accepted only for controlled non-browser clients). The browser cannot provide a command, URL, device path or Mihomo Secret. Mihomo reads use fixed server-side endpoints (`/version`, `/configs`, `/rules`, `/proxies`); opt-in node/rule operations are fixed Controller calls, and persistent rule editing can only send a validated rules array to the reviewed local config path or restricted root helper socket. Perf RAPL is a long-lived server-side subprocess; its stderr is parsed and only valid intervals are stored. There is no service-control or arbitrary shell endpoint.
 
 ## Unavailable values
 

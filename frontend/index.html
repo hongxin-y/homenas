@@ -2,46 +2,108 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HomeNAS · 家庭 NAS 状态中心</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f3f1eb" />
+  <title>HomeNAS · 私有运维台</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
   <div id="app" class="app-shell">
-    <section id="login-view" class="login-shell">
-      <div class="login-card">
-        <div class="brand-mark">HN</div>
-        <p class="eyebrow">PRIVATE NAS CONSOLE</p>
-        <h1>HomeNAS</h1>
-        <p class="muted">通过 VPN 安全查看家庭 NAS 的实时状态。</p>
-        <form id="login-form">
-          <label>管理员账号<input id="username" value="admin" autocomplete="username" required /></label>
-          <label>密码<input id="password" type="password" autocomplete="current-password" required /></label>
-          <button class="primary-button" type="submit">登录控制台</button>
-          <p id="login-error" class="form-error" role="alert"></p>
-        </form>
+    <section id="login-view" class="login-screen">
+      <div class="login-canvas">
+        <header class="login-brand">
+          <div class="brand-mark">HN</div>
+          <div><strong>HomeNAS</strong><span>PRIVATE OPERATIONS</span></div>
+        </header>
+        <div class="login-grid">
+          <div class="login-intro">
+            <p class="eyebrow">LOCAL INFRASTRUCTURE / 01</p>
+            <h1>你的 NAS，<br /><em>清楚地在线。</em></h1>
+            <p class="login-lede">从健康信号到具体节点，把每一次查看、判断和恢复都留在同一个私有控制台里。</p>
+            <div class="login-proof">
+              <div><span class="proof-index">01</span><span><strong>只读优先</strong><small>主机、磁盘与服务状态保持安全边界</small></span></div>
+              <div><span class="proof-index">02</span><span><strong>节点可见</strong><small>Mihomo 代理组和具体节点一目了然</small></span></div>
+              <div><span class="proof-index">03</span><span><strong>数据有单位</strong><small>功耗、电费与网络曲线不隐藏计算口径</small></span></div>
+            </div>
+          </div>
+          <div class="login-panel">
+            <div class="login-panel-top"><span>ADMIN ACCESS</span><span class="access-state"><i></i> PRIVATE</span></div>
+            <h2>进入控制台</h2>
+            <p class="muted">使用本地管理员账号继续。</p>
+            <form id="login-form" class="login-form">
+              <label>管理员账号<input id="username" value="admin" autocomplete="username" required /></label>
+              <label>密码<input id="password" type="password" autocomplete="current-password" required /></label>
+              <button class="primary-button" type="submit"><span>打开 HomeNAS</span><span aria-hidden="true">→</span></button>
+              <p id="login-error" class="form-error" role="alert"></p>
+            </form>
+            <p class="login-footnote"><span class="status-dot"></span>本地会话 · Mihomo Secret 不会发送到浏览器</p>
+          </div>
+        </div>
+        <footer class="login-footer"><span>HOME NAS / READ-ONLY HOST OBSERVABILITY</span><span>VPN ACCESS ONLY</span></footer>
       </div>
     </section>
 
     <section id="dashboard-view" class="dashboard hidden">
       <aside class="sidebar">
-        <div class="brand"><div class="brand-mark small">HN</div><div><strong>HomeNAS</strong><span>Private console</span></div></div>
+        <div class="sidebar-brand">
+          <div class="brand-mark small">HN</div>
+          <div><strong>HomeNAS</strong><span>PRIVATE OPERATIONS</span></div>
+        </div>
+        <div class="sidebar-rule"></div>
         <nav id="nav" aria-label="主导航">
-          <button class="nav-item active" data-page="overview">总览 <span>01</span></button>
-          <button class="nav-item" data-page="system">系统 <span>02</span></button>
-          <button class="nav-item" data-page="power">功耗 <span>03</span></button>
-          <button class="nav-item" data-page="storage">存储 <span>04</span></button>
-          <button class="nav-item" data-page="network">网络 <span>05</span></button>
-          <button class="nav-item" data-page="vpn">VPN <span>06</span></button>
-          <button class="nav-item" data-page="services">服务 <span>07</span></button>
-          <button class="nav-item" data-page="alerts">告警 <span id="nav-alert-count">—</span></button>
+          <div class="nav-group"><p>监控</p>
+            <button class="nav-item active" data-page="overview"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 11.2 12 4l8.5 7.2"/><path d="M5.5 10.4V20h13v-9.6M9.5 20v-5.5h5V20"/></svg></span><span class="nav-label">总览</span><b>01</b></button>
+            <button class="nav-item" data-page="system"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span><span class="nav-label">系统</span><b>02</b></button>
+            <button class="nav-item" data-page="power"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m13.5 2-8 11h6l-1 9 8-11h-6l1-9Z"/></svg></span><span class="nav-label">功耗</span><b>03</b></button>
+          </div>
+          <div class="nav-group"><p>资源</p>
+            <button class="nav-item" data-page="storage"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg></span><span class="nav-label">存储</span><b>04</b></button>
+            <button class="nav-item" data-page="network"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="m7.4 11 9.2-4M7.4 13l9.2 4"/></svg></span><span class="nav-label">网络</span><b>05</b></button>
+          </div>
+          <div class="nav-group"><p>连接与服务</p>
+            <button class="nav-item" data-page="vpn"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.2c0 4.4-2.8 7.7-7 9.3-4.2-1.6-7-4.9-7-9.3V6l7-2.5Z"/><path d="m9.2 12 1.8 1.8 3.8-4"/></svg></span><span class="nav-label">VPN</span><b>06</b></button>
+            <button class="nav-item" data-page="services"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="5" rx="1.5"/><rect x="4" y="11" width="16" height="5" rx="1.5"/><path d="M8 6.5h.1M8 13.5h.1M8 18.5h8"/></svg></span><span class="nav-label">服务</span><b>07</b></button>
+            <button class="nav-item" data-page="alerts"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v9"/><path d="M12 17.5v.1"/></svg></span><span class="nav-label">告警</span><b id="nav-alert-count">—</b></button>
+          </div>
         </nav>
-        <div class="sidebar-footer"><div class="status-dot"></div><span>Local read-only mode</span><button id="logout-button">退出</button></div>
+        <div class="sidebar-bottom">
+          <div class="connection-status"><span class="status-dot"></span><span><strong>采集在线</strong><small>LOCAL READ-ONLY MODE</small></span></div>
+          <button id="logout-button" type="button">退出</button>
+        </div>
       </aside>
-      <main class="content">
-        <header class="topbar"><div><p class="eyebrow" id="page-eyebrow">OVERVIEW</p><h2 id="page-title">总览</h2></div><div class="top-actions"><span id="last-updated" class="muted">等待采集…</span><button id="refresh-button" class="ghost-button">刷新</button></div></header>
-        <div id="page-content"></div>
-      </main>
+
+      <div class="dashboard-main">
+        <div class="mobile-topbar" aria-label="移动端应用栏">
+          <div class="mobile-brand"><div class="brand-mark small">HN</div><div><strong>HomeNAS</strong><span>PRIVATE OPS</span></div></div>
+          <div class="mobile-top-actions"><span class="mobile-live"><i class="status-dot"></i><span>在线</span></span><button id="mobile-refresh-button" class="icon-button" type="button" aria-label="刷新数据" title="刷新数据"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.7-4L3 10"/><path d="M3 5v5h5"/><path d="M4 13a8 8 0 0 0 14.7 4L21 14"/><path d="M21 19v-5h-5"/></svg></button></div>
+        </div>
+        <main class="content">
+          <header class="topbar"><div class="topbar-heading"><div class="page-context"><p class="eyebrow" id="page-eyebrow">OVERVIEW</p><span class="context-rule"></span></div><h2 id="page-title">总览</h2><p id="page-subtitle" class="topbar-subtitle">先看整体健康，再处理需要注意的信号。</p></div><div class="top-actions"><div class="update-indicator"><span class="sync-dot"></span><span id="last-updated" class="muted">等待采集…</span></div><button id="refresh-button" class="ghost-button" type="button"><span>刷新数据</span><span class="button-hint">R</span></button></div></header>
+          <div id="page-content"></div>
+        </main>
+      </div>
+
+      <nav class="mobile-bottom-nav" aria-label="移动端主导航">
+        <button type="button" class="mobile-nav-item active" data-page="overview"><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 11.2 12 4l8.5 7.2"/><path d="M5.5 10.4V20h13v-9.6M9.5 20v-5.5h5V20"/></svg></span><span>总览</span></button>
+        <button type="button" class="mobile-nav-item" data-page="power"><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m13.5 2-8 11h6l-1 9 8-11h-6l1-9Z"/></svg></span><span>功耗</span></button>
+        <button type="button" class="mobile-nav-item" data-page="vpn"><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.2c0 4.4-2.8 7.7-7 9.3-4.2-1.6-7-4.9-7-9.3V6l7-2.5Z"/><path d="m9.2 12 1.8 1.8 3.8-4"/></svg></span><span>VPN</span></button>
+        <button type="button" class="mobile-nav-item" data-page="alerts"><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v9"/><path d="M12 17.5v.1"/></svg></span><span>告警<b id="mobile-alert-count">—</b></span></button>
+        <button type="button" id="mobile-more-button" class="mobile-nav-item" aria-haspopup="dialog" aria-expanded="false"><span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></span><span>更多</span></button>
+      </nav>
+      <div id="mobile-more-sheet" class="mobile-more-sheet" hidden>
+        <button type="button" class="sheet-backdrop" data-more-close aria-label="关闭更多菜单"></button>
+        <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="mobile-more-title">
+          <div class="sheet-handle" aria-hidden="true"></div>
+          <div class="sheet-head"><div><p class="eyebrow">NAVIGATION</p><h2 id="mobile-more-title">更多页面</h2></div><button type="button" class="icon-button" data-more-close aria-label="关闭更多菜单"><span aria-hidden="true">×</span></button></div>
+          <div class="sheet-links">
+            <button type="button" class="sheet-link" data-page="system"><span class="sheet-link-icon">SYS</span><span><strong>系统</strong><small>主机身份、资源与进程</small></span><span aria-hidden="true">›</span></button>
+            <button type="button" class="sheet-link" data-page="storage"><span class="sheet-link-icon">DSK</span><span><strong>存储</strong><small>文件系统、块设备与 SMART</small></span><span aria-hidden="true">›</span></button>
+            <button type="button" class="sheet-link" data-page="network"><span class="sheet-link-icon">NET</span><span><strong>网络</strong><small>物理接口与 TCP 状态</small></span><span aria-hidden="true">›</span></button>
+            <button type="button" class="sheet-link" data-page="services"><span class="sheet-link-icon">SVC</span><span><strong>服务</strong><small>服务资产与 Seafile 健康</small></span><span aria-hidden="true">›</span></button>
+          </div>
+          <div class="sheet-footer"><div class="connection-status"><span class="status-dot"></span><span><strong>采集在线</strong><small>LOCAL READ-ONLY MODE</small></span></div><button id="mobile-logout-button" type="button" class="ghost-button button-small">退出登录</button></div>
+        </section>
+      </div>
     </section>
   </div>
   <script src="/static/main.js" defer></script>

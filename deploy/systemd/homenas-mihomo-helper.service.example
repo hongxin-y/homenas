@@ -1,0 +1,44 @@
+[Unit]
+Description=HomeNAS restricted Mihomo rules helper
+Wants=network-online.target
+After=network-online.target mihomo.service
+Requires=mihomo.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/homenas-mihomo-helper.py
+Restart=on-failure
+RestartSec=3s
+
+# The helper has one purpose: write the fixed Mihomo config and call the
+# localhost Controller reload endpoint. CAP_CHOWN is only for handing the
+# Unix socket to the non-root HomeNAS user. CAP_DAC_OVERRIDE is needed when
+# the config directory does not grant root's service UID a write bit; it does
+# not grant the Web API either capability.
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE
+AmbientCapabilities=
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/mihomo /var/lib/homenas
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RuntimeDirectory=homenas-mihomo
+RuntimeDirectoryMode=0755
+StateDirectory=homenas
+StateDirectoryMode=0700
+UMask=0077
+
+Environment=HOMENAS_MIHOMO_HELPER_SOCKET=/run/homenas-mihomo/rules.sock
+Environment=HOMENAS_MIHOMO_CONFIG_PATH=/etc/mihomo/config.yaml
+Environment=HOMENAS_MIHOMO_BACKUP_DIR=/var/lib/homenas/mihomo-backups
+Environment=HOMENAS_MIHOMO_CONTROLLER=http://127.0.0.1:9090
+Environment=HOMENAS_API_USER=hongxin
+# Set this only to an already-audited root-owned secret file, if Mihomo's
+# Controller requires authentication. Do not put the secret in the API unit.
+# Environment=HOMENAS_MIHOMO_SECRET_FILE=/etc/mihomo/secret
+
+[Install]
+WantedBy=multi-user.target

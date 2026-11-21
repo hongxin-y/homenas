@@ -19,6 +19,12 @@ Environment=HOMENAS_ENABLE_PERF_RAPL=1
 Environment=HOMENAS_PERF_SOCKET=/run/homenas-perf/perf.sock
 Environment=HOMENAS_MIHOMO_CONTROLLER=http://127.0.0.1:9090
 Environment=HOMENAS_ADMIN_PASSWORD=replace-with-a-long-local-admin-password
+# Keep Mihomo mutations disabled unless the config path, file ownership,
+# subscription overwrite behavior and rollback have been reviewed.
+# Environment=HOMENAS_ENABLE_MIHOMO_MUTATIONS=1
+# Environment=HOMENAS_MIHOMO_CONFIG_PATH=/etc/mihomo/config.yaml
+# For a root:root 600 config, prefer the separately reviewed helper unit.
+# Environment=HOMENAS_MIHOMO_HELPER_SOCKET=/run/homenas-mihomo/rules.sock
 ExecStart=/usr/bin/python3 -m homenas.standalone
 Restart=on-failure
 RestartSec=5s

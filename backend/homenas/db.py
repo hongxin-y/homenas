@@ -254,6 +254,20 @@ class Database:
             ).fetchall()
         return [(str(row["ts"]), float(row["energy_j"])) for row in rows if row["energy_j"] is not None]
 
+    def energy_records_since(self, since: str) -> List[tuple[str, float, Optional[float]]]:
+        """Return recent valid Package intervals with Watts for rolling estimates."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT ts, energy_j, watts FROM energy_records "
+                "WHERE quality='ok' AND domain='package' AND ts >= ? ORDER BY ts",
+                (since,),
+            ).fetchall()
+        return [
+            (str(row["ts"]), float(row["energy_j"]), float(row["watts"]) if row["watts"] is not None else None)
+            for row in rows
+            if row["energy_j"] is not None
+        ]
+
     def recent_metrics(self, metric: str, limit: int = 60) -> List[Dict[str, Any]]:
         with self._lock:
             rows = self.conn.execute(

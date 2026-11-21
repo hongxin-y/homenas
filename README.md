@@ -4,7 +4,7 @@ HomeNAS 是一个只读优先的 NAS 监控面板第一版。它在本地开发�
 
 ## 已完成
 
-- Phase 0 只读环境审计报告（见 `docs/`）。
+- Phase 0 审计模板和脱敏摘要（见 `docs/`）；包含主机细节的报告保存在本地产物库中。
 - FastAPI API、SQLite WAL、内存实时缓存和后台采集器。
 - 本地管理员登录（默认仅绑定回环地址；本地演示密码为 `admin`，生产必须通过环境变量覆盖）。
 - 总览、系统、功耗、电池、存储、网络、VPN、服务清单、告警接口和响应式中文界面。
@@ -45,11 +45,15 @@ npm run --prefix frontend build
 
 如果当前机器无法连接 PyPI，直接运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\run-local.ps1`。脚本会优先使用 FastAPI；依赖缺失时自动切换到同一 API 契约的标准库 fallback server，仍可完成页面、登录和总览接口的本地验收。
 
-真实 NAS 服务探测默认关闭。只有在目标 NAS 上完成权限和配置审计后，才通过 `HOMENAS_ENABLE_EXTERNAL_PROBES=1` 开启固定的只读 Tailscale、Mihomo Controller、Seafile health、systemd 和 Docker 探测；浏览器不能传入命令、URL 或 Secret。
+真实 NAS 服务探测默认关闭。只有在目标 NAS 上完成权限和配置审计后，才通过 `HOMENAS_ENABLE_EXTERNAL_PROBES=1` 开启固定的 Tailscale、Mihomo Controller、Seafile health、systemd 和 Docker 探测；浏览器不能传入命令、URL 或 Secret。Mihomo 节点切换和规则运行时开关还需要显式设置 `HOMENAS_ENABLE_MIHOMO_MUTATIONS=1`；规则持久化编辑使用服务器端固定的可写配置文件，或使用只接受 rules 数组的受限 root helper socket，写回前自动备份，reload 失败自动回滚。
 
-功耗页按 CPU Package RAPL 计算当前每小时、每日和年化电费，默认使用上海市居民一户一表分时电价（一档，可通过 `HOMENAS_ELECTRICITY_TARIFF_TIER=1|2|3` 选择年度档位）：峰时 06:00–22:00，谷时 22:00–06:00。日期区间查询按每个有效 Package 采样所在的北京时间段计费，并显示峰/谷明细；不把其他 RAPL domain 相加。若需要临时使用平价估算，仍可设置 `HOMENAS_ELECTRICITY_PRICE_CNY_PER_KWH` 作为无分时数据时的后备值。VPN 页支持 Controller 节点切换和单条规则运行时启停；`HOMENAS_ENABLE_MIHOMO_MUTATIONS` 默认关闭。Mihomo 官方 Controller 的规则编辑接口只支持临时禁用/启用，重启后恢复配置文件状态；规则文本草稿只做校验，不伪装成持久化写回。
+功耗页按 CPU Package RAPL 计算当前每小时、每日和年化电费，默认使用上海市居民一户一表分时电价（一档，可通过 `HOMENAS_ELECTRICITY_TARIFF_TIER=1|2|3` 选择年度档位）：峰时 06:00–22:00，谷时 22:00–06:00。日期区间查询按每个有效 Package 采样所在的北京时间段计费，并显示峰/谷明细；不把其他 RAPL domain 相加。若需要临时使用平价估算，仍可设置 `HOMENAS_ELECTRICITY_PRICE_CNY_PER_KWH` 作为无分时数据时的后备值。VPN 页支持 Controller 节点切换和单条规则运行时启停；`HOMENAS_ENABLE_MIHOMO_MUTATIONS` 默认关闭。配置 `HOMENAS_MIHOMO_CONFIG_PATH` 或 `HOMENAS_MIHOMO_HELPER_SOCKET` 后，规则编辑器可在明确确认后备份并写回顶层 `rules`，再请求 Mihomo reload，失败自动回滚。
 
 ## 安全边界
 
-项目暂不部署到 NAS，也不修改任何现有服务配置。Mihomo Secret 永远只作为服务器端配置存在，当前第一版甚至不读取 Secret；前端只收到固定业务状态。API 默认监听 `127.0.0.1`，后续若接入现有反向代理，需要在目标 NAS 审计后单独批准。
+Mihomo Secret 只在服务器端使用，不会返回前端；root helper 通过本机固定的 Controller 地址读取可选的 root-owned Secret 文件。API 默认监听 `127.0.0.1`，不得为了本地演示绑定公网地址。
+
+## 本地产物
+
+运行时数据库、依赖、私有 NAS 审计报告和 UI 预览资产存放在 `D:\Repos\Artifacts\nas-home`，不进入 Git。仓库中的 `.venv`、`frontend/node_modules`、`runtime` 和 `.oil-ui` 是指向该产物库的 junction；Python 字节码缓存在产物库 `_ephemeral\pycache`，不创建 junction。迁移映射、恢复方式和清理注意事项见 [`docs/ARTIFACTS.md`](docs/ARTIFACTS.md)。
 

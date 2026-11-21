@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .config import COLLECT_INTERVAL_SECONDS, ELECTRICITY_PRICE_CNY_PER_KWH, ELECTRICITY_TARIFF_TIER
@@ -77,6 +78,10 @@ class Collector:
             daily,
             ELECTRICITY_PRICE_CNY_PER_KWH,
             daily_tariff,
+            await _to_thread(
+                self.db.energy_records_since,
+                (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),
+            ),
         )
         self.latest = snapshot
         return snapshot

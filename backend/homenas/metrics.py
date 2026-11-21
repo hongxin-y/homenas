@@ -351,7 +351,7 @@ def collect_services(seafile: Optional[Dict[str, Any]] = None, vpn: Optional[Dic
     services = [
         {"name": "HomeNAS API", "category": "系统", "deployment": "本地开发", "status": "healthy", "health": "ok", "source": "built-in"},
         {"name": "Seafile CE", "category": "文件服务", "deployment": "unknown", "status": "healthy" if seafile.get("healthy") else "unknown", "health": "ok" if seafile.get("healthy") else "unavailable", "source": "configured HTTP health check" if seafile.get("configured") else "awaiting NAS audit"},
-        {"name": "Mihomo", "category": "出站代理", "deployment": "unknown", "status": "healthy" if vpn["mihomo"].get("controller_available") else "unknown", "health": "ok" if vpn["mihomo"].get("controller_available") else "unavailable", "source": "fixed read-only Controller probe"},
+        {"name": "Mihomo", "category": "出站代理", "deployment": "unknown", "status": "healthy" if vpn["mihomo"].get("controller_available") else "unknown", "health": "ok" if vpn["mihomo"].get("controller_available") else "unavailable", "source": "fixed Controller probe; mutations server-side gated"},
         {"name": "Tailscale", "category": "远程访问 VPN", "deployment": "unknown", "status": "healthy" if vpn["tailscale"].get("online") is True else ("offline" if vpn["tailscale"].get("online") is False else "unknown"), "health": "ok" if vpn["tailscale"].get("online") is True else "unavailable", "source": "fixed read-only status probe"},
         {"name": "Docker", "category": "运行时", "deployment": "host", "status": "available" if docker["available"] else "not-installed", "health": "ok" if docker_inventory.get("available") else "unknown", "source": "docker ps" if docker_inventory.get("available") else "binary/socket probe"},
     ]

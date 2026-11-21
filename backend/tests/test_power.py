@@ -2,6 +2,7 @@ import json
 import socket
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 from homenas.db import Database
 from homenas.power import PerfRAPLCollector, parse_perf_record
@@ -98,7 +99,24 @@ def test_power_cost_estimates_use_package_only():
     daily = {"day": "2026-11-09", "domains": {"package": {"kwh": 0.5}, "psys": {"kwh": 0.2}}}
     result = current_cost({"package_watts": 10.0}, daily, 0.6)
     assert result["daily"]["cny"] == 0.3
-    assert result["annualized"]["package_kwh"] == 182.5
+    assert result["annualized"]["basis"] == "current_package_watts"
+    assert result["annualized"]["package_kwh"] == 87.6
+
+
+def test_annualized_cost_uses_rolling_observed_intervals_not_midnight_total():
+    now = datetime.now(timezone.utc)
+    recent = [((now - timedelta(hours=1) + timedelta(seconds=6 * index)).isoformat(), 60.0, 10.0) for index in range(600)]
+    result = current_cost(
+        {"package_watts": 99.0},
+        {"day": now.date().isoformat(), "domains": {"package": {"kwh": 0.5}}},
+        0.6,
+        recent_records=recent,
+    )
+    assert result["annualized"]["basis"] == "rolling_24h"
+    assert round(result["annualized"]["observed_hours"], 3) == 1.0
+    assert round(result["annualized"]["average_watts"], 3) == 10.0
+    assert round(result["annualized"]["package_kwh"], 3) == 87.6
+    assert round(result["annualized"]["cny"], 3) == 52.56
 
 
 def test_shanghai_residential_time_of_use_rates_and_tier_costing():
@@ -127,5 +145,7 @@ def test_energy_records_for_period_returns_package_only(tmp_path):
     ])
     records = db.energy_records_for_period("2026-11-09", "2026-11-09")
     assert records == [("2026-11-09T10:00:00+00:00", 1.0)]
+    recent = db.energy_records_since("2026-11-09T09:00:00+00:00")
+    assert recent == [("2026-11-09T10:00:00+00:00", 1.0, 1.0)]
     db.close()
 
