@@ -656,7 +656,9 @@ def collect_mihomo(traffic_tracker: Optional[MihomoTrafficTracker] = None) -> Di
     result["rules"] = _mihomo_rules(_controller_json(controller, "/rules", secret))
     result["proxies"] = _mihomo_proxies(_controller_json(controller, "/proxies", secret))
     connections = _controller_json(controller, "/connections", secret, timeout=4.0)
-    if isinstance(connections.get("connections"), list):
+    # Mihomo returns `connections: null` when there are no active connections.
+    # That is a valid empty snapshot, not a malformed controller response.
+    if isinstance(connections.get("connections"), list) or connections.get("connections") is None:
         tracker = traffic_tracker or MihomoTrafficTracker()
         result["traffic"] = tracker.sample(connections)
     else:

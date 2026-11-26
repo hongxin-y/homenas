@@ -62,6 +62,29 @@ def test_mihomo_traffic_tracker_treats_counter_reset_as_new_interval():
     assert result["interval_download_bytes"] == 25
 
 
+def test_collect_mihomo_accepts_null_connections_as_empty_snapshot(monkeypatch):
+    monkeypatch.setattr(integrations, "EXTERNAL_PROBES", True)
+    monkeypatch.setenv("HOMENAS_MIHOMO_CONTROLLER", "http://127.0.0.1:9090")
+
+    def controller_json(_controller, path, _secret, timeout=3.0):
+        if path == "/version":
+            return {"version": "1.0.0"}
+        if path == "/configs":
+            return {"mode": "rule"}
+        if path == "/rules":
+            return {"rules": []}
+        if path == "/proxies":
+            return {"proxies": {}, "providers": {}}
+        if path == "/connections":
+            return {"downloadTotal": 0, "uploadTotal": 0, "connections": None}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(integrations, "_controller_json", controller_json)
+    result = integrations.collect_mihomo(MihomoTrafficTracker())
+    assert result["traffic"]["available"] is True
+    assert result["traffic"]["connection_count"] == 0
+
+
 def test_replace_top_level_rules_preserves_neighboring_config():
     source = "mixed-port: 7890\nrules:\n  - DOMAIN-SUFFIX,old.example,Proxy\n  - MATCH,DIRECT\nlog-level: info\n"
     result = _replace_top_level_rules(source, ["DOMAIN-SUFFIX,new.example,Proxy", "MATCH,DIRECT"])
