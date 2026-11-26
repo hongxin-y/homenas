@@ -1,7 +1,13 @@
 import json
 
 import homenas.integrations as integrations
-from homenas.integrations import _replace_top_level_rules, parse_lsblk_json, parse_tailscale_status
+from homenas.integrations import (
+    MihomoTrafficTracker,
+    _replace_top_level_rules,
+    aggregate_mihomo_domain,
+    parse_lsblk_json,
+    parse_tailscale_status,
+)
 
 
 def test_tailscale_parser_returns_counts_without_peer_identity():
@@ -25,6 +31,35 @@ def test_lsblk_parser_flattens_read_only_inventory():
     result = parse_lsblk_json('{"blockdevices":[{"name":"sda","type":"disk","size":"1T","ro":false,"children":[{"name":"sda1","type":"part","mountpoints":["/srv"]}]}]}')
     assert result["available"] is True
     assert [item["name"] for item in result["devices"]] == ["sda", "sda1"]
+
+
+def test_mihomo_traffic_tracker_uses_deltas_and_aggregates_subdomains():
+    tracker = MihomoTrafficTracker()
+    first = tracker.sample({
+        "connections": [
+            {"id": "one", "metadata": {"host": "api.example.com"}, "upload": 100, "download": 500},
+            {"id": "two", "metadata": {"host": "www.example.com"}, "upload": 50, "download": 200},
+        ]
+    }, sampled_at="2026-01-01T00:00:00+00:00")
+    assert first["_sample_records"] == []
+    second = tracker.sample({
+        "connections": [
+            {"id": "one", "metadata": {"host": "api.example.com"}, "upload": 300, "download": 900},
+            {"id": "two", "metadata": {"host": "www.example.com"}, "upload": 100, "download": 300},
+        ]
+    }, sampled_at="2026-01-01T00:00:05+00:00")
+    assert second["interval_upload_bytes"] == 250
+    assert second["interval_download_bytes"] == 500
+    assert [row["domain"] for row in second["_sample_records"]] == ["example.com", "example.com"]
+    assert aggregate_mihomo_domain("edge.example.co.uk") == "example.co.uk"
+
+
+def test_mihomo_traffic_tracker_treats_counter_reset_as_new_interval():
+    tracker = MihomoTrafficTracker()
+    tracker.sample({"connections": [{"id": "one", "metadata": {"host": "example.com"}, "upload": 100, "download": 100}]})
+    result = tracker.sample({"connections": [{"id": "one", "metadata": {"host": "example.com"}, "upload": 10, "download": 25}]})
+    assert result["interval_upload_bytes"] == 10
+    assert result["interval_download_bytes"] == 25
 
 
 def test_replace_top_level_rules_preserves_neighboring_config():

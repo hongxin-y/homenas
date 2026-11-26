@@ -152,6 +152,12 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .panel-head h3 { margin: 0; font-size: 16px; letter-spacing: -.035em; }
 .panel-head p { max-width: 70ch; margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
+.vpn-traffic-panel .nested-panel { padding: 14px; background: var(--canvas); box-shadow: none; }
+.vpn-traffic-panel .nested-panel::before { display: none; }
+.vpn-traffic-panel .nested-panel .panel-head { margin-bottom: 10px; }
+.vpn-traffic-panel .nested-panel h4 { margin: 0; font-size: 13px; }
+.vpn-traffic-panel .traffic-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; }
+.traffic-note { margin-top: 12px; }
 .status-pill { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 8px; color: var(--muted); background: var(--surface-muted); border: 1px solid var(--line); border-radius: 999px; font-size: 10px; font-weight: 750; white-space: nowrap; }
 .status-symbol { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: currentColor; }
 .status-pill.ok { color: var(--success); background: var(--success-wash); border-color: #b8dfd1; }
@@ -259,6 +265,7 @@ tbody tr:hover { background: var(--surface-muted); }
   .chart-shell { min-height: 210px; }
   .chart-svg { height: 170px; }
   .data-grid, .kv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vpn-traffic-panel .traffic-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inline-form { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; }
   .inline-form label { min-width: 0; }
   .inline-form label:last-of-type, .inline-form button { grid-column: 1 / -1; }

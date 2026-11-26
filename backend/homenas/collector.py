@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from .config import COLLECT_INTERVAL_SECONDS, ELECTRICITY_PRICE_CNY_PER_KWH, ELECTRICITY_TARIFF_TIER
 from .db import Database
+from .integrations import MihomoTrafficTracker
 from .metrics import CollectorState, collect_snapshot
 from .power import PerfRAPLCollector
 from .power_cost import current_cost, period_cost, shanghai_tariff
@@ -47,6 +48,7 @@ class Collector:
         self.latest: Optional[Dict[str, Any]] = None
         self._stop = asyncio.Event()
         self.power_collector = PerfRAPLCollector()
+        self.mihomo_traffic_tracker = MihomoTrafficTracker()
 
     async def start(self) -> Dict[str, Any]:
         await _to_thread(self.power_collector.ensure_running)
@@ -56,7 +58,26 @@ class Collector:
         await _to_thread(self.power_collector.ensure_running)
         perf_power = await _to_thread(self.power_collector.snapshot)
         power_override = perf_power if self.power_collector.enabled else None
-        snapshot = await _to_thread(collect_snapshot, self.state, power_override)
+        snapshot = await _to_thread(collect_snapshot, self.state, power_override, self.mihomo_traffic_tracker)
+        mihomo = snapshot.get("vpn", {}).get("mihomo", {})
+        live_traffic = mihomo.get("traffic") if isinstance(mihomo.get("traffic"), dict) else {}
+        sample_records = live_traffic.pop("_sample_records", []) if isinstance(live_traffic, dict) else []
+        await _to_thread(self.db.add_mihomo_traffic_samples, sample_records)
+        traffic_summary = await _to_thread(self.db.mihomo_traffic_summary)
+        mihomo["traffic"] = {
+            **traffic_summary,
+            "available": bool(live_traffic.get("available") or traffic_summary.get("available")),
+            "history_available": bool(traffic_summary.get("available")),
+            "live_available": live_traffic.get("available"),
+            "connection_count": live_traffic.get("connection_count"),
+            "sample_count": live_traffic.get("sample_count"),
+            "tracked_since": live_traffic.get("tracked_since"),
+            "interval_upload_bytes": live_traffic.get("interval_upload_bytes"),
+            "interval_download_bytes": live_traffic.get("interval_download_bytes"),
+            "controller_total_upload_bytes": live_traffic.get("controller_total_upload_bytes"),
+            "controller_total_download_bytes": live_traffic.get("controller_total_download_bytes"),
+            "reason": live_traffic.get("reason") if live_traffic.get("available") is False else None,
+        }
         energy_samples = await _to_thread(self.power_collector.drain_samples)
         await _to_thread(self.db.add_energy_samples, energy_samples)
         await _to_thread(self.db.add_metric_samples, metric_samples(snapshot))

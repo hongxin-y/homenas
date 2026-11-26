@@ -22,7 +22,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -140,6 +140,132 @@ def _mihomo_proxies(body: Dict[str, Any]) -> Dict[str, Any]:
         "nodes": nodes,
         "source": "mihomo /proxies",
     }
+
+
+def _counter_value(value: Any) -> Optional[int]:
+    """Return a non-negative connection byte counter, or None when missing."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def _host_from_connection(connection: Dict[str, Any]) -> str:
+    """Extract a browser-safe host label from Mihomo connection metadata."""
+    metadata = connection.get("metadata") if isinstance(connection.get("metadata"), dict) else {}
+    candidates = [
+        metadata.get("host"),
+        metadata.get("destinationAddress"),
+        metadata.get("destination"),
+        metadata.get("destinationIP"),
+        metadata.get("dstIP"),
+    ]
+    for raw in candidates:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        try:
+            # urlsplit handles host:port and [IPv6]:port when prefixed with //.
+            candidate = urlsplit(value if "://" in value else "//" + value).hostname
+        except ValueError:
+            candidate = None
+        candidate = str(candidate or value.split("/", 1)[0]).strip().rstrip(".").lower()
+        if candidate:
+            try:
+                return f"IP · {ipaddress.ip_address(candidate)}"
+            except ValueError:
+                if re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?", candidate, re.IGNORECASE):
+                    return candidate
+    return "Unavailable"
+
+
+_MULTI_LABEL_SUFFIXES = {
+    "co.uk", "org.uk", "ac.uk", "gov.uk", "com.cn", "net.cn", "org.cn",
+    "gov.cn", "com.hk", "com.tw", "co.jp", "com.au", "co.kr", "com.sg",
+}
+
+
+def aggregate_mihomo_domain(host: str) -> str:
+    """Group subdomains under a practical registrable-domain style label."""
+    host = str(host or "Unavailable").strip().lower().rstrip(".")
+    if host == "unavailable" or host.startswith("ip ·"):
+        return host
+    labels = host.split(".")
+    if len(labels) <= 2:
+        return host
+    suffix = ".".join(labels[-2:])
+    return ".".join(labels[-3:]) if suffix in _MULTI_LABEL_SUFFIXES else suffix
+
+
+class MihomoTrafficTracker:
+    """Turn Mihomo's cumulative active-connection counters into deltas.
+
+    Mihomo exposes per-connection counters only while a connection is active.
+    The first observation is a baseline; subsequent observations contribute the
+    positive counter delta to SQLite. Counter decreases are treated as a reset.
+    """
+
+    def __init__(self) -> None:
+        self._previous: Dict[str, Dict[str, int]] = {}
+        self.started_at = datetime.now(timezone.utc).isoformat()
+        self.sample_count = 0
+
+    def sample(self, body: Dict[str, Any], sampled_at: Optional[str] = None) -> Dict[str, Any]:
+        timestamp = sampled_at or datetime.now(timezone.utc).isoformat()
+        raw_connections = body.get("connections") if isinstance(body.get("connections"), list) else []
+        records: List[Dict[str, Any]] = []
+        interval_upload = 0
+        interval_download = 0
+        seen_ids = set()
+        for raw in raw_connections:
+            if not isinstance(raw, dict):
+                continue
+            connection_id = str(raw.get("id") or "").strip()
+            upload = _counter_value(raw.get("upload"))
+            download = _counter_value(raw.get("download"))
+            if not connection_id or upload is None or download is None:
+                continue
+            seen_ids.add(connection_id)
+            previous = self._previous.get(connection_id)
+            if previous is None:
+                delta_upload = delta_download = 0
+            else:
+                delta_upload = upload if upload < previous["upload"] else upload - previous["upload"]
+                delta_download = download if download < previous["download"] else download - previous["download"]
+            self._previous[connection_id] = {"upload": upload, "download": download, "missed": 0}
+            if delta_upload or delta_download:
+                domain = aggregate_mihomo_domain(_host_from_connection(raw))
+                records.append({
+                    "ts": timestamp,
+                    "domain": domain,
+                    "upload_bytes": delta_upload,
+                    "download_bytes": delta_download,
+                    "quality": "ok",
+                    "source": "mihomo /connections",
+                })
+                interval_upload += delta_upload
+                interval_download += delta_download
+        for connection_id in list(self._previous):
+            if connection_id in seen_ids:
+                continue
+            self._previous[connection_id]["missed"] = self._previous[connection_id].get("missed", 0) + 1
+            if self._previous[connection_id]["missed"] >= 3:
+                del self._previous[connection_id]
+        self.sample_count += 1
+        return {
+            "available": True,
+            "source": "mihomo /connections",
+            "sampled_at": timestamp,
+            "tracked_since": self.started_at,
+            "sample_count": self.sample_count,
+            "connection_count": len(raw_connections),
+            "interval_upload_bytes": interval_upload,
+            "interval_download_bytes": interval_download,
+            "controller_total_upload_bytes": _counter_value(body.get("uploadTotal")),
+            "controller_total_download_bytes": _counter_value(body.get("downloadTotal")),
+            "_sample_records": records,
+        }
 
 
 def _valid_mihomo_name(value: str) -> bool:
@@ -488,7 +614,7 @@ def collect_tailscale() -> Dict[str, Any]:
     return result
 
 
-def collect_mihomo() -> Dict[str, Any]:
+def collect_mihomo(traffic_tracker: Optional[MihomoTrafficTracker] = None) -> Dict[str, Any]:
     path = shutil.which("mihomo") or shutil.which("clash")
     controller = os.getenv("HOMENAS_MIHOMO_CONTROLLER", "").strip().rstrip("/")
     secret = os.getenv("HOMENAS_MIHOMO_SECRET", "")
@@ -502,6 +628,7 @@ def collect_mihomo() -> Dict[str, Any]:
         "config": {},
         "rules": {"available": False, "count": 0, "rules": [], "reason": "Controller 未连接"},
         "proxies": {"available": False, "count": 0, "group_count": 0, "groups": [], "nodes": [], "reason": "Controller 未连接"},
+        "traffic": {"available": False, "history_available": False, "download": [], "upload": [], "reason": "Controller 未连接"},
         "detail": "Secret 仅在服务器环境变量中使用；浏览器不会收到 Secret。",
         "mutation_enabled": MIHOMO_MUTATIONS_ENABLED,
         "persistent_edit_enabled": persistent_status["enabled"],
@@ -528,6 +655,19 @@ def collect_mihomo() -> Dict[str, Any]:
     }
     result["rules"] = _mihomo_rules(_controller_json(controller, "/rules", secret))
     result["proxies"] = _mihomo_proxies(_controller_json(controller, "/proxies", secret))
+    connections = _controller_json(controller, "/connections", secret, timeout=4.0)
+    if isinstance(connections.get("connections"), list):
+        tracker = traffic_tracker or MihomoTrafficTracker()
+        result["traffic"] = tracker.sample(connections)
+    else:
+        result["traffic"] = {
+            "available": False,
+            "history_available": False,
+            "download": [],
+            "upload": [],
+            "reason": "Controller /connections 返回不可解析",
+            "source": "mihomo /connections",
+        }
     return result
 
 

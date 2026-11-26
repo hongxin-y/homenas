@@ -13,6 +13,7 @@ import psutil
 
 from .integrations import (
     EXTERNAL_PROBES,
+    MihomoTrafficTracker,
     collect_mihomo,
     collect_seafile,
     collect_tailscale,
@@ -333,8 +334,8 @@ def _binary_status(binary: str) -> Dict[str, Any]:
     return {"available": False, "path": None, "status": "not-installed"}
 
 
-def collect_vpn() -> Dict[str, Any]:
-    mihomo = collect_mihomo()
+def collect_vpn(traffic_tracker: Optional[MihomoTrafficTracker] = None) -> Dict[str, Any]:
+    mihomo = collect_mihomo(traffic_tracker)
     tailscale = collect_tailscale()
     return {
         "mihomo": mihomo,
@@ -390,8 +391,12 @@ def collect_alerts(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
     return alerts
 
 
-def collect_snapshot(state: CollectorState, power_override: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    vpn = collect_vpn()
+def collect_snapshot(
+    state: CollectorState,
+    power_override: Optional[Dict[str, Any]] = None,
+    mihomo_traffic_tracker: Optional[MihomoTrafficTracker] = None,
+) -> Dict[str, Any]:
+    vpn = collect_vpn(mihomo_traffic_tracker)
     seafile = collect_seafile()
     services = collect_services(seafile, vpn)
     snapshot = {

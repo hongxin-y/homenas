@@ -179,6 +179,23 @@ async def vpn(request: Request, user: str = Depends(current_user)) -> Dict[str, 
     return _snapshot(request)["vpn"]
 
 
+@app.get("/api/vpn/mihomo/traffic")
+async def mihomo_traffic(request: Request, hours: int = 24, user: str = Depends(current_user)) -> Dict[str, Any]:
+    if hours < 1 or hours > 24 * 30:
+        raise HTTPException(status_code=400, detail="hours 必须在 1 到 720 之间")
+    summary = await asyncio.to_thread(request.app.state.db.mihomo_traffic_summary, hours)
+    live = _snapshot(request).get("vpn", {}).get("mihomo", {}).get("traffic", {})
+    return {
+        **summary,
+        "available": bool(summary.get("available") or live.get("live_available")),
+        "history_available": bool(summary.get("available")),
+        "live_available": live.get("live_available"),
+        "connection_count": live.get("connection_count"),
+        "tracked_since": live.get("tracked_since"),
+        "reason": live.get("reason") if live.get("live_available") is False and not summary.get("available") else None,
+    }
+
+
 @app.post("/api/vpn/ping")
 async def vpn_ping(payload: PingRequest, request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
     result = await asyncio.to_thread(ping_target, payload.target)
@@ -365,13 +382,13 @@ async def v1_mihomo_proxies(request: Request, user: str = Depends(current_user))
 
 
 @app.get("/api/v1/vpn/mihomo/traffic")
-async def v1_mihomo_traffic(user: str = Depends(current_user)) -> Dict[str, Any]:
-    return {"available": False, "samples": [], "reason": "只读 Controller 集成尚未配置"}
+async def v1_mihomo_traffic(request: Request, user: str = Depends(current_user)) -> Dict[str, Any]:
+    return _snapshot(request)["vpn"]["mihomo"].get("traffic", {"available": False, "reason": "Mihomo /connections 不可用"})
 
 
 @app.get("/api/v1/vpn/mihomo/connections")
 async def v1_mihomo_connections(user: str = Depends(current_user)) -> Dict[str, Any]:
-    return {"connections": [], "reason": "只读 Controller 集成尚未配置"}
+    return {"connections": [], "reason": "HomeNAS 仅持久化按域名聚合结果，不向浏览器暴露原始连接明细"}
 
 
 @app.get("/api/v1/vpn/tailscale/status")

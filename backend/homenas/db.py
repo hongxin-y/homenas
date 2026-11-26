@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -52,6 +52,17 @@ CREATE TABLE IF NOT EXISTS network_records (
     tx_bytes_per_second REAL,
     quality TEXT NOT NULL DEFAULT 'ok'
 );
+CREATE TABLE IF NOT EXISTS mihomo_traffic_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    upload_bytes INTEGER NOT NULL DEFAULT 0,
+    download_bytes INTEGER NOT NULL DEFAULT 0,
+    quality TEXT NOT NULL DEFAULT 'ok',
+    source TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mihomo_traffic_domain_ts
+    ON mihomo_traffic_records(domain, ts);
 CREATE TABLE IF NOT EXISTS disk_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
@@ -188,6 +199,68 @@ class Database:
                 ],
             )
             self.conn.commit()
+
+    def add_mihomo_traffic_samples(self, samples: List[Dict[str, Any]]) -> None:
+        """Persist positive per-connection deltas grouped by detected domain."""
+        valid = []
+        for sample in samples or []:
+            try:
+                upload = max(0, int(sample.get("upload_bytes", 0)))
+                download = max(0, int(sample.get("download_bytes", 0)))
+            except (TypeError, ValueError):
+                continue
+            if not sample.get("domain") or (upload == 0 and download == 0):
+                continue
+            valid.append((
+                sample.get("ts") or utc_now(),
+                str(sample["domain"])[:253],
+                upload,
+                download,
+                sample.get("quality", "ok"),
+                sample.get("source", "mihomo /connections"),
+            ))
+        if not valid:
+            return
+        with self._lock:
+            self.conn.executemany(
+                "INSERT INTO mihomo_traffic_records(ts, domain, upload_bytes, download_bytes, quality, source) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                valid,
+            )
+            self.conn.commit()
+
+    def mihomo_traffic_summary(self, hours: int = 24) -> Dict[str, Any]:
+        """Aggregate persisted Mihomo domain deltas for a bounded rolling period."""
+        hours = max(1, min(int(hours), 24 * 30))
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT domain, SUM(upload_bytes) AS upload_bytes, SUM(download_bytes) AS download_bytes, "
+                "COUNT(*) AS samples, MAX(ts) AS last_seen "
+                "FROM mihomo_traffic_records WHERE quality='ok' AND ts >= ? GROUP BY domain",
+                (since,),
+            ).fetchall()
+        items = [
+            {
+                "domain": str(row["domain"]),
+                "upload_bytes": int(row["upload_bytes"] or 0),
+                "download_bytes": int(row["download_bytes"] or 0),
+                "samples": int(row["samples"] or 0),
+                "last_seen": row["last_seen"],
+            }
+            for row in rows
+        ]
+        return {
+            "available": bool(items),
+            "period_hours": hours,
+            "since": since,
+            "download": sorted(items, key=lambda item: (-item["download_bytes"], item["domain"])),
+            "upload": sorted(items, key=lambda item: (-item["upload_bytes"], item["domain"])),
+            "total_download_bytes": sum(item["download_bytes"] for item in items) if items else None,
+            "total_upload_bytes": sum(item["upload_bytes"] for item in items) if items else None,
+            "domain_count": len(items) if items else None,
+            "source": "HomeNAS SQLite deltas from Mihomo /connections",
+        }
 
     def energy_summary(self, day: Optional[str] = None) -> Dict[str, Any]:
         """Return per-domain energy and Package-only daily totals.

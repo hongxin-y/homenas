@@ -197,6 +197,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/v1/network/interfaces": "/api/network",
             "/api/v1/network/traffic": "/api/network",
             "/api/v1/vpn/mihomo/status": "/api/vpn",
+            "/api/v1/vpn/mihomo/traffic": "/api/vpn/mihomo/traffic",
             "/api/v1/vpn/tailscale/status": "/api/vpn",
             "/api/v1/services": "/api/services",
             "/api/v1/alerts": "/api/alerts",
@@ -248,6 +249,28 @@ class Handler(BaseHTTPRequestHandler):
             selected_tier = requested_tier if requested_tier in (1, 2, 3) else ELECTRICITY_TARIFF_TIER
             records = self.app_runtime.db.energy_records_for_period(start, end)
             self.write_json(period_cost(summary, price, start, end, records, shanghai_tariff(selected_tier)))
+            return
+        if path == "/api/vpn/mihomo/traffic":
+            if not self.require_user():
+                return
+            try:
+                hours = int((query.get("hours") or ["24"])[0])
+            except (TypeError, ValueError):
+                hours = 24
+            if hours < 1 or hours > 24 * 30:
+                self.write_json({"detail": "hours 必须在 1 到 720 之间"}, 400)
+                return
+            summary = self.app_runtime.db.mihomo_traffic_summary(hours)
+            live = ((self.app_runtime.collector.latest or {}).get("vpn", {}).get("mihomo", {}).get("traffic", {}))
+            self.write_json({
+                **summary,
+                "available": bool(summary.get("available") or live.get("live_available")),
+                "history_available": bool(summary.get("available")),
+                "live_available": live.get("live_available"),
+                "connection_count": live.get("connection_count"),
+                "tracked_since": live.get("tracked_since"),
+                "reason": live.get("reason") if live.get("live_available") is False and not summary.get("available") else None,
+            })
             return
         if path == "/api/alerts":
             if self.require_user():
